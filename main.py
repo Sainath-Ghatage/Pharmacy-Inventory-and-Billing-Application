@@ -1,22 +1,26 @@
 import sys
-import sqlite3
 import datetime
 from datetime import timedelta
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QFrame, QStackedWidget, QGraphicsOpacityEffect
+    QPushButton, QFrame, QStackedWidget, QGraphicsOpacityEffect, 
+    QSpacerItem, QSizePolicy
 )
 from PyQt6.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QFont, QIcon
 
 import database
+
+# --- Import Interfaces ---
+from dashboard import DashboardInterface
 from billing import BillingInterface
 from pharmacy_details import PharmacyDetailsInterface
 from sales import SalesInterface
 from reports import ReportsInterface
 from stock_management import StockInterface
 from orders import OrdersInterface
-
+from purchase_entry import PurchaseEntryInterface 
+from partner_management import PartnerManagementInterface # Ensure this is imported
 
 # ---------- COLORS ----------
 COLOR_NAVBAR = "#0d47a1"   # Deep Blue
@@ -24,32 +28,22 @@ COLOR_SIDEBAR = "#0d47a1"  # MATCHED Navbar color
 COLOR_BG = "#f4f7f6"       # Light Gray Background
 COLOR_ACTIVE = "#1976d2"   # Lighter Blue for active state
 COLOR_TEXT_NAV = "#ffffff" # White text for sidebar
-COLOR_TEXT_BODY = "#212529"
-
-
-# ==========================================
-#  1. NOTIFICATION SYSTEM (Fixed Blue Background)
-# ==========================================
+COLOR_TEXT_HEADER = "#90caf9" # Light blue for sidebar headers
 
 # ==========================================
-#  1. NOTIFICATION SYSTEM (Fixed Crash & Colors)
+#  1. NOTIFICATION SYSTEM
 # ==========================================
 class ToastNotification(QWidget):
     def __init__(self, parent, title, message, type="warning"):
         super().__init__(parent)
-        
-        # Window Flags (Frameless & Transparent parent)
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.SubWindow)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
-
         self.setFixedSize(350, 80)
 
-        # --- MAIN LAYOUT (Transparent) ---
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
 
-        # --- CONTAINER FRAME (The Visible Blue Box) ---
         self.container = QFrame()
         self.container.setObjectName("ToastContainer")
         self.container.setStyleSheet("""
@@ -61,20 +55,17 @@ class ToastNotification(QWidget):
         """)
         self.main_layout.addWidget(self.container)
 
-        # --- INNER LAYOUT (Inside the Blue Box) ---
         self.layout = QHBoxLayout(self.container)
         self.layout.setContentsMargins(15, 15, 15, 15)
         self.layout.setSpacing(15)
 
-        # Determine Icon Style
         if type == "success":
             icon_color, icon_symbol = "#2ecc71", "✔"
         elif type == "error":
             icon_color, icon_symbol = "#e74c3c", "✖"
-        else: # Warning
+        else:
             icon_color, icon_symbol = "#f1c40f", "!"
 
-        # Icon (Colored Circle)
         self.lbl_icon = QLabel(icon_symbol)
         self.lbl_icon.setFixedSize(30, 30)
         self.lbl_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -90,15 +81,12 @@ class ToastNotification(QWidget):
         """)
         self.layout.addWidget(self.lbl_icon)
 
-        # Text Section
         text_layout = QVBoxLayout()
         text_layout.setSpacing(2)
         
-        # Title (White)
         self.lbl_title = QLabel(title.upper())
         self.lbl_title.setStyleSheet("color: white; font-weight: bold; font-size: 12px; border: none; background: transparent;")
         
-        # Message (White)
         self.lbl_msg = QLabel(message)
         self.lbl_msg.setWordWrap(True)
         self.lbl_msg.setStyleSheet("color: white; font-size: 11px; border: none; background: transparent;")
@@ -107,7 +95,6 @@ class ToastNotification(QWidget):
         text_layout.addWidget(self.lbl_msg)
         self.layout.addLayout(text_layout)
 
-        # Close Btn
         self.btn_close = QPushButton("✕")
         self.btn_close.setFixedSize(20, 20)
         self.btn_close.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -118,16 +105,13 @@ class ToastNotification(QWidget):
         """)
         self.layout.addWidget(self.btn_close, alignment=Qt.AlignmentFlag.AlignTop)
 
-        # Auto Close Timer (5 Seconds)
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.close_notification)
         self.timer.start(5000) 
 
     def show_animation(self):
-        # Animate the Container, not the transparent window
         self.opacity_effect = QGraphicsOpacityEffect(self.container)
         self.container.setGraphicsEffect(self.opacity_effect)
-        
         self.anim = QPropertyAnimation(self.opacity_effect, b"opacity")
         self.anim.setDuration(500)
         self.anim.setStartValue(0)
@@ -151,19 +135,11 @@ class NotificationManager:
         self.active_notifications = []
     
     def show_toast(self, title, message, type="warning"):
-        try:
-            # If parent is hidden or deleted, stop
-            if not self.parent or not self.parent.isVisible(): return
-        except RuntimeError:
-            return
-
+        if not self.parent or not self.parent.isVisible(): return
         toast = ToastNotification(self.parent, title, message, type)
-        
-        # Clean up toast reference when it is destroyed
         toast.destroyed.connect(lambda: self.remove_toast(toast))
-        
         self.active_notifications.append(toast)
-        self.reposition() # Set initial position
+        self.reposition()
         toast.show_animation()
             
     def remove_toast(self, toast):
@@ -173,34 +149,27 @@ class NotificationManager:
 
     def reposition(self):
         try:
-            # Safety check for App Closing
-            if not self.parent or not self.parent.isVisible():
-                return
-            
+            if not self.parent or not self.parent.isVisible(): return
             width = self.parent.width()
-            
             for i, toast in enumerate(self.active_notifications):
-                # Check if C++ object still exists before moving
                 try:
                     target_y = 20 + (i * 90)
                     target_x = width - toast.width() - 20
                     toast.move(target_x, target_y)
-                except RuntimeError:
-                    continue # Skip this toast if it's already deleted
-                    
-        except RuntimeError:
-            pass # Parent window destroyed
+                except RuntimeError: continue
+        except RuntimeError: pass
+
 # ==========================================
 #  2. MAIN APPLICATION
 # ==========================================
-
 class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Pharmacy Management System")
         self.setGeometry(100, 50, 1400, 850)
-        self.setStyleSheet(f"background-color: {COLOR_BG};")
+        self.setStyleSheet(f"background-color: {COLOR_BG}; font-family: 'Segoe UI', sans-serif;")
 
+        # Ensure DB is ready
         database.init_db()
 
         self.sidebar_visible = True
@@ -208,25 +177,25 @@ class MainWindow(QWidget):
 
         # --- SETUP NOTIFICATIONS ---
         self.notify_manager = NotificationManager(self)
-        
-        # Trigger calculation 1.5 seconds after app load (gives UI time to render)
-        QTimer.singleShot(1500, self.perform_calculations_and_notify)
+        QTimer.singleShot(2000, self.perform_calculations_and_notify)
 
     def init_ui(self):
         main_layout = QHBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
+        # 1. Sidebar
         self.sidebar = self.create_sidebar()
         main_layout.addWidget(self.sidebar)
 
+        # 2. Main Content
         right_container = QWidget()
         right_layout = QVBoxLayout(right_container)
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(0)
 
         right_layout.addWidget(self.create_navbar())
-
+        
         self.stack = QStackedWidget()
         right_layout.addWidget(self.stack, 1)
 
@@ -234,82 +203,86 @@ class MainWindow(QWidget):
 
         self.load_pages()
 
-    # --- CALCULATION & NOTIFICATION LOGIC ---
-    def perform_calculations_and_notify(self):
-        """
-        Calculates Stock < 10 and Expiry < 120 days.
-        Strictly checks conditions before showing ANY notification.
-        """
-        conn = database.get_connection()
-        if not conn: return
-        cursor = conn.cursor()
+    # --- SIDEBAR STRUCTURE ---
+    def create_sidebar(self):
+        sidebar = QFrame()
+        sidebar.setFixedWidth(240)
+        sidebar.setStyleSheet(f"background-color:{COLOR_SIDEBAR}; border-right: 1px solid #082e66;")
+        layout = QVBoxLayout(sidebar)
+        layout.setContentsMargins(0, 20, 0, 10) 
+        layout.setSpacing(5)
 
-        # 1. CALCULATE LOW STOCK (Less than 10)
-        try:
-            cursor.execute("SELECT Med_name, Quantity FROM Medicine WHERE Quantity < 10")
-            low_stock_items = cursor.fetchall()
-            
-            # STRICT CHECK: Only notify if list is not empty
-            if low_stock_items:
-                count = len(low_stock_items)
-                name = low_stock_items[0][0]
-                msg = f"{name} and {count-1} others are running low." if count > 1 else f"{name} is running low."
-                
-                self.notify_manager.show_toast(
-                    title="Stock Alert",
-                    message=f"Inventory Check: {msg} Please restock soon.",
-                    type="warning" # Yellow Icon
-                )
-        except Exception as e:
-            print(f"Stock Check Error: {e}")
+        self.nav_buttons = {}
 
-        # 2. CALCULATE EXPIRY (Less than 120 Days)
-        try:
-            cursor.execute("SELECT Med_name, EXP_Date FROM Medicine")
-            all_meds = cursor.fetchall()
-            
-            today = datetime.datetime.now()
-            threshold_date = today + timedelta(days=120)
-            expiring_count = 0
-            expiring_name = ""
+        # --- Helper to create section headers ---
+        def add_header(text):
+            lbl = QLabel(text.upper())
+            lbl.setStyleSheet(f"color: {COLOR_TEXT_HEADER}; font-size: 11px; font-weight: bold; padding-left: 15px; margin-top: 15px; margin-bottom: 5px;")
+            layout.addWidget(lbl)
 
-            for name, date_str in all_meds:
-                if not date_str: continue
-                try:
-                    # Attempt to parse date (Handle YYYY-MM-DD or DD-MM-YYYY)
-                    if "-" in date_str:
-                        parts = date_str.split("-")
-                        if len(parts[0]) == 4: # YYYY-MM-DD
-                            exp_date = datetime.datetime.strptime(date_str, "%Y-%m-%d")
-                        else: # DD-MM-YYYY
-                            exp_date = datetime.datetime.strptime(date_str, "%d-%m-%Y")
-                    else:
-                        continue
+        # --- Helper to create buttons ---
+        def add_nav_btn(name, label):
+            btn = QPushButton(f"  {label}")
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setFixedHeight(45)
+            btn.clicked.connect(lambda _, n=name: self.switch_page(n))
+            # Initial Style
+            btn.setStyleSheet(self.get_btn_style(False))
+            layout.addWidget(btn)
+            self.nav_buttons[name] = btn
 
-                    # STRICT CHECK: Is date between Today and Today+120?
-                    if today <= exp_date <= threshold_date:
-                        expiring_count += 1
-                        if not expiring_name: expiring_name = name
+        # 1. CORE
+        add_header("Main")
+        add_nav_btn("Dashboard", "Dashboard")
+        add_nav_btn("Billing", "Billing / POS")
 
-                except ValueError:
-                    continue 
+        # 2. INVENTORY
+        add_header("Inventory & Procurement")
+        add_nav_btn("Inventory", "Medicine Stock")
+        add_nav_btn("Purchase Entry", "Purchase Invoice") 
+        add_nav_btn("Orders", "Purchase Orders")
+        
+        # 3. RECORDS
+        add_header("Records")
+        add_nav_btn("Sales", "Sales History")
+        add_nav_btn("Reports", "Reports & Analytics")
 
-            # STRICT CHECK: Only notify if count > 0
-            if expiring_count > 0:
-                msg = f"{expiring_name} and {expiring_count-1} others expiring soon." if expiring_count > 1 else f"{expiring_name} is expiring soon."
-                
-                self.notify_manager.show_toast(
-                    title="Expiry Warning",
-                    message=f"Shelf Life Alert: {msg} Check inventory.",
-                    type="error" # Red Icon
-                )
+        # 4. ADMIN
+        add_header("Admin")
+        add_nav_btn("Partners", "Partner Management")
+        add_nav_btn("Pharmacy", "Pharmacy Profile")
 
-        except Exception as e:
-            print(f"Expiry Check Error: {e}")
-        finally:
-            conn.close()
+        layout.addStretch()
+        
+        # Version Info
+        ver = QLabel("v2.1.0")
+        ver.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        ver.setStyleSheet("color: #64b5f6; font-size: 11px;")
+        layout.addWidget(ver)
+        
+        return sidebar
 
-    # --- NAVBAR & SIDEBAR ---
+    def get_btn_style(self, is_active):
+        if is_active:
+            return f"""
+                QPushButton {{ 
+                    border: none; text-align: left; padding-left: 20px; 
+                    font-size: 14px; color: white; 
+                    background-color: {COLOR_ACTIVE}; 
+                    font-weight: bold; 
+                    border-left: 4px solid white; 
+                }}
+            """
+        else:
+            return f"""
+                QPushButton {{ 
+                    border: none; text-align: left; padding-left: 20px; 
+                    font-size: 14px; color: {COLOR_TEXT_NAV}; 
+                    background-color: transparent; 
+                }} 
+                QPushButton:hover {{ background-color: {COLOR_ACTIVE}; }}
+            """
+
     def create_navbar(self):
         navbar = QFrame()
         navbar.setFixedHeight(60)
@@ -336,76 +309,123 @@ class MainWindow(QWidget):
         layout.addWidget(user)
         return navbar
 
-    def create_sidebar(self):
-        sidebar = QFrame()
-        sidebar.setFixedWidth(220)
-        sidebar.setStyleSheet(f"background-color:{COLOR_SIDEBAR};")
-        layout = QVBoxLayout(sidebar)
-        layout.setContentsMargins(0, 40, 0, 10) 
-        layout.setSpacing(10)
-
-        self.nav_buttons = {}
-        for name in ["Billing", "Sales", "Stock Management", "Reports", "Orders", "Pharmacy Details"]:
-            btn = QPushButton(name)
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setFixedHeight(50)
-            btn.clicked.connect(lambda _, n=name: self.switch_page(n))
-            btn.setStyleSheet(f"QPushButton {{ border: none; text-align: left; padding-left: 25px; font-size: 15px; color: {COLOR_TEXT_NAV}; background-color: transparent; }} QPushButton:hover {{ background-color: {COLOR_ACTIVE}; }}")
-            layout.addWidget(btn)
-            self.nav_buttons[name] = btn
-
-        layout.addStretch()
-        ver = QLabel("v1.0.0")
-        ver.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        ver.setStyleSheet("color: #90caf9; font-size: 12px;")
-        layout.addWidget(ver)
-        return sidebar
-
+    # --- PAGE LOGIC ---
     def load_pages(self):
+        # Instantiate Pages
+        self.dashboard_page = DashboardInterface()
         self.billing_page = BillingInterface()
         self.sales_page = SalesInterface()
         self.stock_page = StockInterface()
         self.reports_page = ReportsInterface()
         self.orders_page = OrdersInterface()
+        self.pharma_page = PharmacyDetailsInterface()
+        self.purchase_page = PurchaseEntryInterface() 
+        self.partner_page = PartnerManagementInterface()
 
+        # Connect Signals
         self.sales_page.edit_bill_signal.connect(self.handle_edit_request)
         self.stock_page.stock_updated.connect(self.billing_page.refresh_cache)
+        
+        # When stock changes (from manual edit OR purchase entry), refresh other views
+        self.stock_page.stock_updated.connect(self.dashboard_page.refresh_data)
 
+        # Mapping names to instances
         self.pages = {
+            "Dashboard": self.dashboard_page,
             "Billing": self.billing_page,
             "Sales": self.sales_page,
-            "Stock Management": self.stock_page,
+            "Inventory": self.stock_page,
             "Reports": self.reports_page,
             "Orders": self.orders_page,
-            "Pharmacy Details": PharmacyDetailsInterface()
+            "Pharmacy": self.pharma_page,
+            "Purchase Entry": self.purchase_page,
+            "Partners": self.partner_page # <--- THIS LINE WAS MISSING
         }
 
+        # Add to Stack
         for page in self.pages.values():
-            self.stack.addWidget(page)
+             self.stack.addWidget(page)
 
-        self.switch_page("Billing")
+        # Default Page
+        self.switch_page("Dashboard")
 
     def handle_edit_request(self, bill_id):
         self.switch_page("Billing")
         self.billing_page.load_bill_for_editing(bill_id)
 
     def switch_page(self, name):
-        self.stack.setCurrentWidget(self.pages[name])
-        for btn in self.nav_buttons.values():
-            btn.setStyleSheet(f"QPushButton {{ border: none; text-align: left; padding-left: 25px; font-size: 15px; color: {COLOR_TEXT_NAV}; background-color: transparent; }} QPushButton:hover {{ background-color: {COLOR_ACTIVE}; }}")
-        self.nav_buttons[name].setStyleSheet(f"QPushButton {{ border: none; text-align: left; padding-left: 25px; font-size: 15px; color: white; background-color: {COLOR_ACTIVE}; font-weight: bold; border-left: 5px solid white; }}")
+        if name in self.pages:
+            self.stack.setCurrentWidget(self.pages[name])
+            
+            # Refresh dashboard if switching to it
+            if name == "Dashboard":
+                self.dashboard_page.refresh_data()
+            
+            # Update visual state of buttons
+            for btn_name, btn in self.nav_buttons.items():
+                is_active = (btn_name == name)
+                btn.setStyleSheet(self.get_btn_style(is_active))
 
     def toggle_sidebar(self):
         if self.sidebar_visible:
             self.sidebar.setFixedWidth(0)
         else:
-            self.sidebar.setFixedWidth(220)
+            self.sidebar.setFixedWidth(240)
         self.sidebar_visible = not self.sidebar_visible
         
     def resizeEvent(self, event):
         if hasattr(self, 'notify_manager'):
             self.notify_manager.reposition()
         super().resizeEvent(event)
+
+    # --- NOTIFICATIONS (Low Stock / Expiry) ---
+    def perform_calculations_and_notify(self):
+        conn = database.get_connection()
+        if not conn: return
+        cursor = conn.cursor()
+
+        try:
+            # 1. Low Stock
+            cursor.execute("SELECT Med_name FROM Medicine WHERE Quantity < 10")
+            low_rows = cursor.fetchall()
+            if low_rows:
+                count = len(low_rows)
+                name = low_rows[0][0]
+                msg = f"{name} and {count-1} others are running low." if count > 1 else f"{name} is running low."
+                self.notify_manager.show_toast("Stock Alert", msg, "warning")
+
+            # 2. Expiry (Next 30 days)
+            today = datetime.datetime.now()
+            threshold = today + timedelta(days=30) # Warn 30 days in advance
+            
+            cursor.execute("SELECT Med_name, EXP_Date FROM Medicine")
+            all_meds = cursor.fetchall()
+            
+            exp_count = 0
+            exp_name = ""
+            
+            for name, date_str in all_meds:
+                if not date_str: continue
+                try:
+                    # Handle both YYYY-MM-DD and DD-MM-YYYY
+                    if "-" in date_str:
+                        parts = date_str.split("-")
+                        if len(parts[0]) == 4: d = datetime.datetime.strptime(date_str, "%Y-%m-%d")
+                        else: d = datetime.datetime.strptime(date_str, "%d-%m-%Y")
+                        
+                        if today <= d <= threshold:
+                            exp_count += 1
+                            if not exp_name: exp_name = name
+                except: continue
+
+            if exp_count > 0:
+                msg = f"{exp_name} and {exp_count-1} others expiring soon." if exp_count > 1 else f"{exp_name} is expiring soon."
+                self.notify_manager.show_toast("Expiry Alert", msg, "error")
+
+        except Exception as e:
+            print(f"Notification Error: {e}")
+        finally:
+            conn.close()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

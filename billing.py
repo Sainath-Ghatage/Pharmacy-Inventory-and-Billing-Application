@@ -5,10 +5,10 @@ from PyQt6.QtWidgets import (
     QApplication, QWidget, QHBoxLayout, QVBoxLayout, QLabel, QLineEdit,
     QListWidget, QListWidgetItem, QPushButton, QTableWidget, QTableWidgetItem,
     QHeaderView, QSpinBox, QComboBox, QFrame, QSizePolicy, QMessageBox,
-    QSpacerItem, QGridLayout
+    QGridLayout, QAbstractItemView, QDoubleSpinBox, QCompleter
 )
-from PyQt6.QtGui import QFont, QTextDocument, QColor, QIcon
-from PyQt6.QtCore import Qt, QSize
+from PyQt6.QtGui import QFont, QTextDocument, QColor, QIcon, QStandardItemModel, QStandardItem
+from PyQt6.QtCore import Qt, QSize, QStringListModel
 from PyQt6.QtPrintSupport import QPrinter, QPrintDialog
 
 import database 
@@ -17,49 +17,107 @@ import database
 COLOR_NAVBAR = "#0d47a1"        # Deep Blue
 COLOR_BG = "#f4f7f6"            # Light Grey Background
 COLOR_WHITE = "#ffffff"
-COLOR_GREEN_BTN = "#198754"     # Bootstrap Success Green
-COLOR_BLUE_BTN = "#0d6efd"      # Bootstrap Primary Blue
+COLOR_GREEN_BTN = "#198754"     # Success Green
+COLOR_BLUE_BTN = "#0d6efd"      # Primary Blue
 COLOR_DARK_BTN = "#212529"      # Dark Grey/Black
 COLOR_RED_BTN = "#dc3545"       # Danger Red
 COLOR_TEXT_PRIMARY = "#212529"
 COLOR_TEXT_SECONDARY = "#6c757d"
 COLOR_BORDER = "#dee2e6"
 
+# --- GLOBAL STYLES FOR VISIBILITY ---
+# Forces text to be black (#000) on white backgrounds to fix visibility issues
+STYLE_INPUT_FIELD = f"""
+    QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {{
+        background-color: {COLOR_WHITE};
+        color: #000000;  /* Force Black Text */
+        border: 1px solid {COLOR_BORDER};
+        border-radius: 5px;
+        padding: 5px;
+        font-size: 14px;
+        selection-background-color: {COLOR_NAVBAR};
+        selection-color: white;
+    }}
+    QLineEdit::placeholder {{ color: #6c757d; }}
+    QComboBox::drop-down {{ border: none; }}
+    QComboBox QAbstractItemView {{
+        background-color: {COLOR_WHITE};
+        color: #000000;
+        selection-background-color: #e9ecef;
+        selection-color: black;
+    }}
+"""
+
+STYLE_LABEL_DARK = "color: #000000; font-weight: 500; font-size: 14px;"
+
 class BillingInterface(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Pharmacy System")
-        self.setGeometry(100, 50, 1280, 800)
-        self.setStyleSheet(f"background-color: {COLOR_BG}; font-family: 'Segoe UI', Arial, sans-serif;")
+        self.setWindowTitle("Billing POS")
+        # Apply global font and background
+        self.setStyleSheet(f"""
+            QWidget {{ background-color: {COLOR_BG}; font-family: 'Segoe UI', Arial, sans-serif; }}
+            {STYLE_INPUT_FIELD}
+        """)
 
         # --- STATE VARIABLES ---
         self.current_bill_id = None  
         self.bill_items = []         
         self.current_selected_med = None
+        self.customer_names = []
+        self.doctor_names = []
 
         # --- DATABASE CACHE ---
+        self.refresh_cache()
+        
+        self.build_ui()
+
+    def refresh_cache(self):
+        conn = database.get_connection()
+        if not conn:
+            self.all_meds_cache = []
+            return
+
+        cursor = conn.cursor()
+        
+        # 1. Fetch Medicines
         try:
             self.all_meds_cache = database.get_all_medicines()
         except Exception as e:
-            print("Database error or module not found:", e)
+            print("Med fetch error:", e)
             self.all_meds_cache = []
 
-        self.build_ui()
-        self.populate_match_list(self.all_meds_cache)
+        # 2. Fetch Customers for Autocomplete
+        try:
+            cursor.execute("SELECT Name FROM Customer")
+            self.customer_names = [row[0] for row in cursor.fetchall() if row[0]]
+        except Exception as e:
+            print("Customer fetch error:", e)
+            self.customer_names = []
+
+        # 3. Fetch Doctors for Autocomplete
+        try:
+            cursor.execute("SELECT Name FROM Doctor")
+            self.doctor_names = [row[0] for row in cursor.fetchall() if row[0]]
+        except Exception as e:
+            print("Doctor fetch error:", e)
+            self.doctor_names = []
+        
+        conn.close()
 
     # =================================================================
     # BUILD UI
     # =================================================================
     def build_ui(self):
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(0)
+        main_layout.setContentsMargins(10, 10, 10, 10)
+        main_layout.setSpacing(10)
 
         # 2. MAIN CONTENT AREA (Split Left/Right)
         content_wrapper = QWidget()
         content_layout = QHBoxLayout(content_wrapper)
-        content_layout.setContentsMargins(20, 20, 20, 20)
-        content_layout.setSpacing(20)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(15)
 
         # --- LEFT PANEL: Product Selection ---
         left_panel = self.create_left_panel()
@@ -73,834 +131,485 @@ class BillingInterface(QWidget):
 
     def create_left_panel(self):
         panel = QFrame()
-        panel.setStyleSheet(f"""
-            QFrame {{
-                background-color: {COLOR_WHITE};
-                border-radius: 10px;
-                border: 1px solid {COLOR_BORDER};
-            }}
-        """)
+        panel.setStyleSheet(f"background-color: {COLOR_WHITE}; border-radius: 10px; border: 1px solid {COLOR_BORDER};")
         layout = QVBoxLayout(panel)
-        layout.setSpacing(15)
-        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(10)
+        layout.setContentsMargins(15, 15, 15, 15)
 
-        # 1. Header
-        lbl_header = QLabel("Product Selection")
-        lbl_header.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {COLOR_TEXT_PRIMARY}; border: none;")
+        # Header
+        lbl_header = QLabel("Product Search")
+        lbl_header.setStyleSheet(f"font-size: 16px; font-weight: bold; color: {COLOR_NAVBAR};")
         layout.addWidget(lbl_header)
 
-        # 2. Search Box
+        # Search Box
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("🔍 Type medicine...")
+        self.search_input.setPlaceholderText("🔍 Search Name / Barcode...")
+        self.search_input.setFixedHeight(40)
         self.search_input.textChanged.connect(self.on_search_text)
-        self.search_input.setFixedHeight(45)
-        self.search_input.setStyleSheet(f"""
-            QLineEdit {{
-                padding: 0 10px;
-                border: 1px solid {COLOR_BORDER};
-                border-radius: 5px;
-                font-size: 14px;
-                color: #333;
-            }}
-            QLineEdit:focus {{ border: 1px solid {COLOR_NAVBAR}; }}
-        """)
         layout.addWidget(self.search_input)
 
-        # 3. Match List (List Widget)
+        # Match List
         self.match_list = QListWidget()
         self.match_list.itemClicked.connect(self.on_match_click)
-        self.match_list.setMaximumHeight(100)
         self.match_list.setStyleSheet(f"""
-            QListWidget {{
-                border: 1px solid {COLOR_BORDER};
-                border-radius: 5px;
-                background-color: #f8f9fa;
-            }}
-            QListWidget::item {{ padding: 8px; color: {COLOR_TEXT_PRIMARY}; }}
-            QListWidget::item:selected {{ background-color: #e9ecef; color: {COLOR_NAVBAR}; }}
+            QListWidget {{ border: 1px solid {COLOR_BORDER}; border-radius: 5px; color: #000000; background-color: white; }}
+            QListWidget::item {{ color: #000000; padding: 5px; }}
+            QListWidget::item:selected {{ background-color: {COLOR_NAVBAR}; color: white; }}
         """)
         layout.addWidget(self.match_list)
 
-        # 4. Info Card
-        info_card = QFrame()
-        info_card.setStyleSheet(f"background-color: #ffffff; border: 1px solid {COLOR_BORDER}; border-radius: 10px;")
-        card_layout = QVBoxLayout(info_card)
-        card_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        # Selected Item Info
+        info_box = QFrame()
+        info_box.setStyleSheet(f"background-color: #f8f9fa; border-radius: 5px; padding: 10px; border: 1px solid #eee;")
+        info_layout = QVBoxLayout(info_box)
         
         self.lbl_med_name = QLabel("Select Medicine")
+        self.lbl_med_name.setStyleSheet("font-size: 16px; font-weight: bold; color: #000000;")
         self.lbl_med_name.setWordWrap(True)
-        self.lbl_med_name.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.lbl_med_name.setStyleSheet(f"font-size: 20px; font-weight: bold; color: {COLOR_TEXT_PRIMARY}; border: none; margin: 5px 0;")
         
-        self.lbl_details = QLabel("Type: - | Stock: -")
-        self.lbl_details.setStyleSheet("color: #666; font-size: 13px; border: none;")
+        self.lbl_details = QLabel("Stock: - | Rack: - | GST: -")
+        self.lbl_details.setStyleSheet("color: #444444; font-size: 12px;")
         
-        card_layout.addWidget(self.lbl_med_name)
-        card_layout.addWidget(self.lbl_details)
-        layout.addWidget(info_card, 1) # Expandable
+        info_layout.addWidget(self.lbl_med_name)
+        info_layout.addWidget(self.lbl_details)
+        layout.addWidget(info_box)
 
-        # 5. Controls Row (Price, Unit Type, Qty)
-        controls_layout = QHBoxLayout()
-        controls_layout.setSpacing(10)
-
-        # -- Price Box --
-        price_frame = QFrame()
-        price_layout = QVBoxLayout(price_frame)
-        price_layout.setContentsMargins(0,0,0,0)
-        price_layout.setSpacing(2)
+        # Controls (Unit, Price, Qty)
+        controls_layout = QGridLayout()
         
-        self.lbl_price_title = QLabel("Unit Price")
-        self.lbl_price_title.setStyleSheet("color: #666; font-size: 12px; border: none; padding:3px;")
-        self.lbl_unit_price = QLabel("₹0.00")
-        self.lbl_unit_price.setStyleSheet(f"color: {COLOR_TEXT_PRIMARY}; font-size: 22px; font-weight: bold; border: none; padding:3px;")
+        def create_label(text):
+            l = QLabel(text)
+            l.setStyleSheet(STYLE_LABEL_DARK)
+            return l
+
+        # Unit Dropdown (Loose/Strip)
+        self.cmb_unit = QComboBox()
+        self.cmb_unit.addItems(["Pack/Strip"])
+        self.cmb_unit.currentIndexChanged.connect(self.update_price_display)
+        self.cmb_unit.setStyleSheet(STYLE_INPUT_FIELD)
+
+        controls_layout.addWidget(create_label("Unit:"), 0, 0)
+        controls_layout.addWidget(self.cmb_unit, 0, 1)
+
+        # Discount Field
+        self.spin_disc = QDoubleSpinBox()
+        self.spin_disc.setRange(0, 100)
+        self.spin_disc.setSuffix("%")
+        self.spin_disc.setStyleSheet(STYLE_INPUT_FIELD)
         
-        price_layout.addWidget(self.lbl_price_title)
-        price_layout.addWidget(self.lbl_unit_price)
-        controls_layout.addWidget(price_frame)
+        controls_layout.addWidget(create_label("Disc %:"), 0, 2)
+        controls_layout.addWidget(self.spin_disc, 0, 3)
 
-        # -- Unit Type Selector --
-        self.unit_selector = QComboBox()
-        self.unit_selector.addItems(["Pack/Strip", "Loose Tab"])
-        self.unit_selector.setVisible(False)
-        self.unit_selector.setFixedSize(100, 40)
-        self.unit_selector.currentTextChanged.connect(self.update_price_display)
-        self.unit_selector.setStyleSheet(f"""
-            QComboBox {{
-                border: 1px solid {COLOR_BORDER};
-                border-radius: 5px;
-                padding-left: 5px;
-                background: white;
-                color: {COLOR_TEXT_PRIMARY};
-            }}
-            QComboBox QAbstractItemView {{
-                background-color: white;
-                color: black;
-                selection-background-color: #e9ecef;
-                selection-color: black;
-            }}
-        """)
-        controls_layout.addWidget(self.unit_selector)
+        # Price Display
+        self.lbl_price = QLabel("₹0.00")
+        self.lbl_price.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {COLOR_GREEN_BTN};")
+        controls_layout.addWidget(create_label("Price:"), 1, 0)
+        controls_layout.addWidget(self.lbl_price, 1, 1)
 
-        # -- Quantity Box --
-        qty_container = QFrame()
-        qty_container.setFixedSize(120, 45) 
-        qty_container.setStyleSheet(f"""
-            QFrame {{
-                border: 1px solid {COLOR_BORDER};
-                border-radius: 5px;
-                background-color: white;
-            }}
-        """)
-        qty_layout = QHBoxLayout(qty_container)
-        qty_layout.setContentsMargins(0, 0, 0, 0)
-        qty_layout.setSpacing(0)
-
-        btn_minus = QPushButton("-")
-        btn_minus.setFixedSize(35, 45)
-        btn_minus.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_minus.clicked.connect(self.decrease_qty)
-        btn_minus.setStyleSheet("border: none; font-size: 20px; font-weight: bold; color: #555; background: transparent;")
-        
+        # Quantity
         self.qty_spin = QSpinBox()
-        self.qty_spin.setButtonSymbols(QSpinBox.ButtonSymbols.NoButtons)
-        self.qty_spin.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.qty_spin.setRange(1, 9999)
-        self.qty_spin.setStyleSheet("border: none; font-size: 18px; font-weight: bold; background: transparent; color: #333;")
+        self.qty_spin.setFixedSize(80, 35)
+        self.qty_spin.setStyleSheet(STYLE_INPUT_FIELD)
+        
+        controls_layout.addWidget(create_label("Qty:"), 1, 2)
+        controls_layout.addWidget(self.qty_spin, 1, 3)
 
-        btn_plus = QPushButton("+")
-        btn_plus.setFixedSize(35, 45)
-        btn_plus.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_plus.clicked.connect(self.increase_qty)
-        btn_plus.setStyleSheet("border: none; font-size: 20px; font-weight: bold; color: #555; background: transparent;")
-
-        qty_layout.addWidget(btn_minus)
-        qty_layout.addWidget(self.qty_spin)
-        qty_layout.addWidget(btn_plus)
-
-        controls_layout.addWidget(qty_container)
         layout.addLayout(controls_layout)
 
-        # 6. Add Button
+        # Add Button
         self.add_btn = QPushButton("ADD TO BILL")
+        self.add_btn.setFixedHeight(45)
         self.add_btn.clicked.connect(self.add_to_bill)
         self.add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.add_btn.setFixedHeight(50)
-        self.add_btn.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {COLOR_GREEN_BTN};
-                color: white;
-                font-size: 16px;
-                font-weight: bold;
-                border-radius: 5px;
-                border: none;
-            }}
-            QPushButton:hover {{ background-color: #146c43; }}
-        """)
+        self.add_btn.setStyleSheet(f"background-color: {COLOR_NAVBAR}; color: white; font-weight: bold; border-radius: 5px;")
         layout.addWidget(self.add_btn)
-        
-        # 7. Status Label
-        self.left_status = QLabel("")
-        self.left_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.left_status.setMinimumHeight(30)
-        self.left_status.setStyleSheet("font-size: 13px; border: none; padding: 5px;")
-        layout.addWidget(self.left_status)
 
         return panel
 
     def create_right_panel(self):
         panel = QFrame()
-        panel.setStyleSheet(f"""
-            QFrame {{
-                background-color: {COLOR_WHITE};
-                border-radius: 10px;
-                border: 1px solid {COLOR_BORDER};
-            }}
-        """)
+        panel.setStyleSheet(f"background-color: {COLOR_WHITE}; border-radius: 10px; border: 1px solid {COLOR_BORDER};")
         layout = QVBoxLayout(panel)
-        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setContentsMargins(15, 15, 15, 15)
         layout.setSpacing(10)
 
-        # 1. Header
-        header_layout = QHBoxLayout()
-        lbl_bill_id = QLabel("Bill Preview") 
-        lbl_bill_id.setStyleSheet(f"font-size: 20px; font-weight: bold; color: {COLOR_TEXT_PRIMARY}; border: none;")
-        header_layout.addWidget(lbl_bill_id)
-        layout.addLayout(header_layout)
-
-        # --- PATIENT & DOCTOR DETAILS ---
-        details_frame = QFrame()
-        details_frame.setStyleSheet("background-color: #f8f9fa; border-radius: 5px; border: none; color: black;")
-        details_layout = QHBoxLayout(details_frame)
-        details_layout.setContentsMargins(10, 10, 10, 10)
-        details_layout.setSpacing(15)
-
-        # Patient Input
+        # Header Details
+        form_layout = QHBoxLayout()
+        
+        # --- PATIENT INPUT WITH AUTOCOMPLETE ---
         self.inp_patient = QLineEdit()
         self.inp_patient.setPlaceholderText("Patient Name")
-        self.inp_patient.setFixedHeight(40)
-        self.inp_patient.setStyleSheet(f"border: 1px solid {COLOR_BORDER}; border-radius: 5px; padding-left: 10px; background: white; color: black;")
+        self.inp_patient.setStyleSheet(STYLE_INPUT_FIELD)
         
-        # Doctor Input
+        # Setup Patient Completer
+        self.pat_completer = QCompleter(self.customer_names)
+        self.pat_completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self.pat_completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        self.inp_patient.setCompleter(self.pat_completer)
+        
+        # --- DOCTOR INPUT WITH AUTOCOMPLETE ---
         self.inp_doctor = QLineEdit()
         self.inp_doctor.setPlaceholderText("Doctor Name")
-        self.inp_doctor.setFixedHeight(40)
-        self.inp_doctor.setStyleSheet(f"border: 1px solid {COLOR_BORDER}; border-radius: 5px; padding-left: 10px; background: white; color: black;")
-
-        details_layout.addWidget(QLabel("Patient:"))
-        details_layout.addWidget(self.inp_patient, 1) # Stretch factor 1
-        details_layout.addWidget(QLabel("Doctor:"))
-        details_layout.addWidget(self.inp_doctor, 1) # Stretch factor 1
+        self.inp_doctor.setStyleSheet(STYLE_INPUT_FIELD)
         
-        layout.addWidget(details_frame)
+        # Setup Doctor Completer
+        self.doc_completer = QCompleter(self.doctor_names)
+        self.doc_completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self.doc_completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        self.inp_doctor.setCompleter(self.doc_completer)
+        
+        lbl_pat = QLabel("Patient:")
+        lbl_pat.setStyleSheet(STYLE_LABEL_DARK)
+        lbl_doc = QLabel("Doctor:")
+        lbl_doc.setStyleSheet(STYLE_LABEL_DARK)
 
-        # 2. Table
+        form_layout.addWidget(lbl_pat)
+        form_layout.addWidget(self.inp_patient)
+        form_layout.addWidget(lbl_doc)
+        form_layout.addWidget(self.inp_doctor)
+        layout.addLayout(form_layout)
+
+        # Table
         self.bill_table = QTableWidget()
-        self.bill_table.setColumnCount(5)
-        self.bill_table.setHorizontalHeaderLabels(["Item Name", "Price", "Qty", "Total", ""])
+        self.bill_table.setColumnCount(7)
+        self.bill_table.setHorizontalHeaderLabels(["Item", "Unit", "Price", "Qty", "Disc%", "Tax", "Total"])
         self.bill_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        self.bill_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
-        self.bill_table.setColumnWidth(4, 50)
         self.bill_table.verticalHeader().setVisible(False)
-        self.bill_table.setShowGrid(False)
-        self.bill_table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.bill_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.bill_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.bill_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.bill_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.bill_table.setStyleSheet(f"""
-            QTableWidget {{ border: none; background-color: white; }}
-            QHeaderView::section {{
-                background-color: #f1f3f5;
-                color: {COLOR_TEXT_PRIMARY};
-                border: none;
-                padding: 10px;
-                font-weight: bold;
-            }}
-            QTableWidget::item {{ border-bottom: 1px solid #f8f9fa; padding: 8px; color: #333; }}
-            QTableWidget::item:selected {{ background-color: #e9ecef; color: black; }}
+            QTableWidget {{ border: none; gridline-color: #eee; color: #000000; background-color: white; }}
+            QHeaderView::section {{ background-color: #f8f9fa; color: #000000; border: none; padding: 5px; font-weight: bold; }}
+            QTableWidget::item {{ color: #000000; }}
+            QTableWidget::item:selected {{ background-color: {COLOR_NAVBAR}; color: white; }}
         """)
-        self.bill_table.cellClicked.connect(self.on_table_row_clicked)
+        
+        self.bill_table.cellDoubleClicked.connect(self.remove_item)
         layout.addWidget(self.bill_table)
 
-        # 3. Footer Section
+        # Footer
         footer_bg = QFrame()
-        footer_bg.setStyleSheet("background-color: #f8f9fa; border-radius: 8px; border: none;")
-        footer_layout = QVBoxLayout(footer_bg)
-        footer_layout.setContentsMargins(20, 20, 20, 20)
-        footer_layout.setSpacing(15)
+        footer_bg.setStyleSheet("background-color: #f8f9fa; border-radius: 5px; border: 1px solid #eee;")
+        footer_layout = QHBoxLayout(footer_bg)
+        
+        self.lbl_items_count = QLabel("Items: 0")
+        self.lbl_items_count.setStyleSheet("color: #444444; font-weight: bold;")
+        
+        # --- PAYMENT DROPDOWN ---
+        self.cmb_payment = QComboBox()
+        self.cmb_payment.addItems(["Cash", "UPI", "Card", "Net Banking"])
+        self.cmb_payment.setFixedWidth(120)
+        self.cmb_payment.setStyleSheet(STYLE_INPUT_FIELD)
 
-        # -- Totals --
-        totals_grid = QGridLayout()
-        totals_grid.setColumnStretch(0, 1)
+        self.lbl_grand_total = QLabel("Total: ₹0.00")
+        self.lbl_grand_total.setStyleSheet(f"color: {COLOR_NAVBAR}; font-size: 22px; font-weight: bold;")
         
-        lbl_grand_txt = QLabel("Total:")
-        lbl_grand_txt.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {COLOR_NAVBAR};")
-        self.lbl_grand_val = QLabel("₹0.00")
-        self.lbl_grand_val.setStyleSheet(f"font-size: 22px; font-weight: bold; color: {COLOR_NAVBAR};")
-        
-        totals_grid.addWidget(lbl_grand_txt, 2, 1, alignment=Qt.AlignmentFlag.AlignRight)
-        totals_grid.addWidget(self.lbl_grand_val, 2, 2, alignment=Qt.AlignmentFlag.AlignRight)
-        
-        footer_layout.addLayout(totals_grid)
-        footer_layout.addWidget(self.create_h_line())
+        self.btn_checkout = QPushButton("CHECKOUT & PRINT")
+        self.btn_checkout.setFixedSize(180, 45)
+        self.btn_checkout.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_checkout.clicked.connect(self.save_bill)
+        self.btn_checkout.setStyleSheet(f"background-color: {COLOR_GREEN_BTN}; color: white; font-weight: bold; border-radius: 5px;")
 
-        # -- Action Buttons --
-        actions_layout = QHBoxLayout()
-        actions_layout.setSpacing(15) 
-
-        # Clear
-        self.clear_btn = QPushButton("Clear")
-        self.clear_btn.setFixedWidth(80)
-        self.clear_btn.setFixedHeight(45)
-        self.clear_btn.clicked.connect(self.clear_bill)
-        self.clear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.clear_btn.setStyleSheet(f"""
-            QPushButton {{ background-color: #6c757d; color: white; border-radius: 5px; font-weight: bold; }}
-            QPushButton:hover {{ background-color: #5a6268; }}
-        """)
+        footer_layout.addWidget(self.lbl_items_count)
+        footer_layout.addStretch()
         
-        # Payment Combo
-        pay_layout = QHBoxLayout()
-        pay_layout.setSpacing(8)
+        # Add Payment Label and Dropdown
         lbl_pay = QLabel("Payment:")
-        lbl_pay.setStyleSheet("color: #495057; font-weight: bold;")
+        lbl_pay.setStyleSheet(STYLE_LABEL_DARK)
+        footer_layout.addWidget(lbl_pay)
+        footer_layout.addWidget(self.cmb_payment)
         
-        self.payment_combo = QComboBox()
-        self.payment_combo.addItems(["Cash", "UPI", "Card"])
-        self.payment_combo.setFixedSize(140, 45)
-        self.payment_combo.setStyleSheet(f"""
-            QComboBox {{
-                border: 1px solid {COLOR_BORDER};
-                border-radius: 5px;
-                padding-left: 10px;
-                background: white;
-                color: #333;
-                font-weight: bold;
-            }}
-            QComboBox::drop-down {{ border: none; }}
-            QComboBox::down-arrow {{ image: none; border-left: 2px solid {COLOR_BORDER}; width: 0; height: 0; }}
-            
-            QComboBox QAbstractItemView {{
-                background-color: white;
-                color: #333333;
-                selection-background-color: #e9ecef;
-                selection-color: black;
-                outline: none;
-                border: 1px solid {COLOR_BORDER};
-            }}
-        """)
+        footer_layout.addSpacing(15)
+        footer_layout.addWidget(self.lbl_grand_total)
+        footer_layout.addWidget(self.btn_checkout)
         
-        pay_layout.addWidget(lbl_pay)
-        pay_layout.addWidget(self.payment_combo)
-
-        # New Bill
-        self.new_bill_btn = QPushButton("New Bill")
-        self.new_bill_btn.setFixedSize(100, 45)
-        self.new_bill_btn.clicked.connect(self.start_new_bill)
-        self.new_bill_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.new_bill_btn.setStyleSheet(f"""
-            QPushButton {{ 
-                background-color: white; 
-                color: {COLOR_BLUE_BTN}; 
-                border: 2px solid {COLOR_BLUE_BTN}; 
-                border-radius: 5px; 
-                font-weight: bold; 
-            }}
-            QPushButton:hover {{ background-color: #f0f8ff; }}
-        """)
-
-        # Checkout
-        self.save_btn = QPushButton("CHECKOUT")
-        self.save_btn.setFixedHeight(45)
-        self.save_btn.setMinimumWidth(160)
-        self.save_btn.clicked.connect(self.save_bill)
-        self.save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.save_btn.setStyleSheet(f"""
-            QPushButton {{ 
-                background-color: {COLOR_NAVBAR}; 
-                color: white; 
-                border-radius: 5px; 
-                font-weight: bold; 
-                font-size: 14px;
-            }}
-            QPushButton:hover {{ background-color: #0a3675; }}
-        """)
-
-        actions_layout.addWidget(self.clear_btn)
-        actions_layout.addStretch()
-        actions_layout.addLayout(pay_layout)
-        actions_layout.addStretch()
-        actions_layout.addWidget(self.new_bill_btn)
-        actions_layout.addWidget(self.save_btn)
-
-        footer_layout.addLayout(actions_layout)
         layout.addWidget(footer_bg)
-        
         return panel
-
-    def create_h_line(self):
-        line = QFrame()
-        line.setFrameShape(QFrame.Shape.HLine)
-        line.setFrameShadow(QFrame.Shadow.Sunken)
-        line.setStyleSheet(f"border: none; background-color: {COLOR_BORDER}; max-height: 1px;")
-        return line
 
     # =================================================================
     # LOGIC
     # =================================================================
-    def increase_qty(self):
-        val = self.qty_spin.value()
-        self.qty_spin.setValue(val + 1)
-
-    def decrease_qty(self):
-        val = self.qty_spin.value()
-        if val > 1:
-            self.qty_spin.setValue(val - 1)
-
-    def on_search_text(self, text: str):
+    def on_search_text(self, text):
         text = text.lower().strip()
         if not text:
-            self.populate_match_list(self.all_meds_cache)
+            self.match_list.clear()
             return
-        matches = [row for row in self.all_meds_cache if text in (row[1] or "").lower()]
+        
+        matches = []
+        for row in self.all_meds_cache:
+            # Index 1 = Med_name, Index 14 = Barcode (as per new schema)
+            name = row[1].lower() if row[1] else ""
+            barcode = str(row[14]).lower() if row[14] else ""
+            
+            if text in name or text == barcode:
+                matches.append(row)
+        
         self.populate_match_list(matches)
 
-    def populate_match_list(self, meds):
+    def populate_match_list(self, matches):
         self.match_list.clear()
-        for row in meds[:50]: 
-            med_id, med_name, tabs_per_strip, rate_per_tab, qty, mtype, pp, sp, mfg, exp = row
-            display_text = f"{med_name} ({mtype})"
-            item = QListWidgetItem(display_text)
+        for row in matches[:50]:
+            name = row[1]
+            rack = row[11] if row[11] else "-"
+            stock = row[4]
+            display = f"{name}  |  Rack: {rack}  |  Stock: {stock}"
+            
+            item = QListWidgetItem(display)
             item.setData(Qt.ItemDataRole.UserRole, row)
             self.match_list.addItem(item)
 
-    def on_match_click(self, item: QListWidgetItem):
+    def on_match_click(self, item):
         row = item.data(Qt.ItemDataRole.UserRole)
-        self.load_medicine_details(row)
-        self.qty_spin.setValue(1)
-        self.left_status.setText("")
-        self.add_btn.setText("ADD TO BILL")
-        self.bill_table.clearSelection()
-
-    def load_medicine_details(self, row_data):
-        med_id, name, tabs_per_strip, rate_per_tab, qty, mtype, pp, sp, mfg, exp = row_data
-
+        
         self.current_selected_med = {
-            "med_id": med_id,
-            "name": name,
-            "pack_price": float(sp),
-            "loose_price": float(rate_per_tab) if rate_per_tab else 0.0,
-            "stock": int(qty) if qty else 0,
-            "expiry": exp,
-            "type": mtype,
-            "tabs_per_strip": int(tabs_per_strip) if tabs_per_strip else 1
+            "med_id": row[0],
+            "name": row[1],
+            "tabs_per_strip": row[2] if row[2] else 1,
+            "rate_per_tab": row[3] if row[3] else 0.0,
+            "stock": row[4],
+            "type": row[5],
+            "sale_price": row[7],
+            "hsn": row[10],
+            "rack": row[11],
+            "gst_rate": row[12] if row[12] else 0.0,
+            "discount": row[13] if row[13] else 0.0
         }
         
-        self.lbl_med_name.setText(name)
-        self.lbl_details.setText(f"Type: {mtype} | Expiry: {exp} | Stock: {qty}")
+        med = self.current_selected_med
+        self.lbl_med_name.setText(med['name'])
+        self.lbl_details.setText(f"Stock: {med['stock']} | Rack: {med['rack']} | GST: {med['gst_rate']}% | HSN: {med['hsn']}")
         
-        if mtype in ["Tablet", "Capsule"]:
-            self.unit_selector.setVisible(True)
-            self.unit_selector.setCurrentIndex(0) 
-            self.lbl_price_title.setText("Price (Per Pack)")
-            self.lbl_unit_price.setText(f"₹{float(sp):.2f}")
+        self.spin_disc.setValue(med['discount'])
+
+        self.cmb_unit.blockSignals(True)
+        self.cmb_unit.clear()
+        
+        is_tablet = med['type'] in ["Tablet", "Capsule"]
+        if is_tablet:
+            self.cmb_unit.addItems(["Pack/Strip", "Loose Tablet"])
         else:
-            self.unit_selector.setVisible(False)
-            self.unit_selector.setCurrentIndex(0) 
-            self.lbl_price_title.setText("Unit Price")
-            self.lbl_unit_price.setText(f"₹{float(sp):.2f}")
+            self.cmb_unit.addItems(["Pack/Unit"])
+            
+        self.cmb_unit.blockSignals(False)
+        self.cmb_unit.setCurrentIndex(0)
+        
+        self.update_price_display()
+        self.qty_spin.setValue(1)
+        self.qty_spin.setFocus()
 
-        max_stock = int(qty) if qty else 0
-        self.qty_spin.setMaximum(max(1, max_stock))
-
-    def update_price_display(self, text):
+    def update_price_display(self):
         if not self.current_selected_med: return
         med = self.current_selected_med
         
-        if text == "Loose Tab":
-            self.lbl_price_title.setText("Price (Per Tab)")
-            self.lbl_unit_price.setText(f"₹{med['loose_price']:.2f}")
-            total_tabs = med['stock'] * med['tabs_per_strip']
-            self.qty_spin.setMaximum(max(1, total_tabs))
+        unit = self.cmb_unit.currentText()
+        if unit == "Loose Tablet":
+            price = med['rate_per_tab']
         else:
-            self.lbl_price_title.setText("Price (Per Pack)")
-            self.lbl_unit_price.setText(f"₹{med['pack_price']:.2f}")
-            self.qty_spin.setMaximum(max(1, med['stock']))
+            price = med['sale_price']
+            
+        self.lbl_price.setText(f"₹{price:.2f}")
 
     def add_to_bill(self):
-        if not self.current_selected_med:
-            self.show_error("Please search and select a medicine first.")
-            return
-
-        qty_input = int(self.qty_spin.value())
+        if not self.current_selected_med: return
+        
         med = self.current_selected_med
-        mode = self.unit_selector.currentText()
-        is_loose = (mode == "Loose Tab" and self.unit_selector.isVisible())
+        qty = self.qty_spin.value()
+        unit_type = self.cmb_unit.currentText()
+        
+        if unit_type == "Loose Tablet":
+            unit_price = med['rate_per_tab']
+            qty_to_deduct = qty / med['tabs_per_strip']
+        else:
+            unit_price = med['sale_price']
+            qty_to_deduct = qty
 
-        if qty_input <= 0:
-            self.show_error("Quantity must be at least 1.")
+        if qty_to_deduct > med['stock']:
+            QMessageBox.warning(self, "Stock Alert", f"Insufficient Stock!\nRequired: {qty_to_deduct}\nAvailable: {med['stock']}")
             return
 
-        if is_loose:
-            req_strips = qty_input / med['tabs_per_strip']
-            if req_strips > med['stock']:
-                 self.show_error(f"Insufficient Stock. Available: {med['stock']} Strips")
-                 return
-        else:
-            if qty_input > med['stock']:
-                self.show_error(f"Insufficient Stock. Available: {med['stock']}")
-                return
+        discount_pct = self.spin_disc.value()
 
-        final_price = med['loose_price'] if is_loose else med['pack_price']
-        display_name = f"{med['name']} (Loose)" if is_loose else med['name']
-        qty_db = (qty_input / med['tabs_per_strip']) if is_loose else qty_input
+        new_item = {
+            "med_id": med['med_id'],
+            "name": med['name'],
+            "unit": unit_type,
+            "qty": qty,
+            "qty_deduct": qty_to_deduct, 
+            "price": unit_price,
+            "gst_rate": med['gst_rate'],
+            "hsn": med['hsn'],
+            "discount_pct": discount_pct,
+            "total": 0.0,
+            "tax_amt": 0.0
+        }
+        self.calculate_line_item(new_item)
+        self.bill_items.append(new_item)
+        
+        self.refresh_table()
+        self.search_input.clear()
+        self.search_input.setFocus()
 
-        existing_item = None
-        for item in self.bill_items:
-            if item["med_id"] == med["med_id"] and item["is_loose"] == is_loose:
-                existing_item = item
-                break
+    def calculate_line_item(self, item):
+        gross = item['price'] * item['qty']
+        disc_amt = gross * (item['discount_pct'] / 100.0)
+        net_total = gross - disc_amt
+        rate = item['gst_rate']
+        tax_amt = net_total * (rate / (100 + rate)) if rate > 0 else 0.0
+        
+        item['total'] = net_total
+        item['tax_amt'] = tax_amt
 
-        if existing_item:
-            existing_item["qty_display"] += qty_input
-            existing_item["qty_db"] += qty_db
-            existing_item["total"] = existing_item["qty_display"] * final_price
-        else:
-            self.bill_items.append({
-                "med_id": med["med_id"],
-                "name": display_name,
-                "qty_display": qty_input,
-                "qty_db": qty_db,
-                "unit_price": final_price,
-                "total": qty_input * final_price,
-                "is_loose": is_loose
-            })
-
-        self.refresh_bill_table()
-        self.left_status.setText("")
-        self.left_status.setStyleSheet(f"color: {COLOR_GREEN_BTN}; font-size: 12px;")
-        self.left_status.setText("Item added successfully!")
-        self.bill_table.clearSelection()
-        self.add_btn.setText("ADD TO BILL")
-
-    def show_error(self, msg):
-        self.left_status.setStyleSheet("color: #dc3545; font-size: 12px;")
-        self.left_status.setText(msg)
-
-    def refresh_bill_table(self):
-        self.bill_table.setRowCount(0)
+    def refresh_table(self):
         self.bill_table.setRowCount(len(self.bill_items))
-
-        grand_total = 0
-
+        grand_total = 0.0
+        
         for i, item in enumerate(self.bill_items):
-            grand_total += item["total"]
-            it_name = QTableWidgetItem(item["name"])
-            it_price = QTableWidgetItem(f"₹{item['unit_price']:.2f}")
-            it_price.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            grand_total += item['total']
             
-            it_qty = QTableWidgetItem(str(item["qty_display"]))
-            it_qty.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            
-            it_total = QTableWidgetItem(f"₹{item['total']:.2f}")
-            it_total.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.bill_table.setItem(i, 0, QTableWidgetItem(item['name']))
+            self.bill_table.setItem(i, 1, QTableWidgetItem(item['unit']))
+            self.bill_table.setItem(i, 2, QTableWidgetItem(f"{item['price']:.2f}"))
+            self.bill_table.setItem(i, 3, QTableWidgetItem(str(item['qty'])))
+            self.bill_table.setItem(i, 4, QTableWidgetItem(f"{item['discount_pct']}%"))
+            self.bill_table.setItem(i, 5, QTableWidgetItem(f"{item['tax_amt']:.2f}"))
+            self.bill_table.setItem(i, 6, QTableWidgetItem(f"{item['total']:.2f}"))
+        
+        self.lbl_items_count.setText(f"Items: {len(self.bill_items)}")
+        self.lbl_grand_total.setText(f"Total: ₹{grand_total:.2f}")
 
-            self.bill_table.setItem(i, 0, it_name)
-            self.bill_table.setItem(i, 1, it_price)
-            self.bill_table.setItem(i, 2, it_qty)
-            self.bill_table.setItem(i, 3, it_total)
-
-            btn_del = QPushButton("⛔")
-            btn_del.setStyleSheet("color: red; border: none; font-size: 16px; background: transparent;")
-            btn_del.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn_del.clicked.connect(lambda _, idx=i: self.delete_item_at(idx))
-            self.bill_table.setCellWidget(i, 4, btn_del)
-
-        self.lbl_grand_val.setText(f"₹{grand_total:.2f}")
-
-    def on_table_row_clicked(self, row, col):
-        if col == 4: return 
-        if row < 0 or row >= len(self.bill_items): return
-        item = self.bill_items[row]
-        self.left_status.setStyleSheet("color: #d63384;")
-        self.left_status.setText(f"Selected: {item['name']}")
-
-    def delete_item_at(self, idx):
-        if 0 <= idx < len(self.bill_items):
-            removed = self.bill_items.pop(idx)
-            self.refresh_bill_table()
-            self.left_status.setText(f"Removed {removed['name']}")
-
-    def clear_bill(self):
-        self.bill_items = []
-        self.refresh_bill_table()
-        self.lbl_med_name.setText("Select Medicine")
-        self.lbl_details.setText("Type: - | Expiry: - | Stock: -")
-        self.lbl_unit_price.setText("₹0.00")
-        self.qty_spin.setValue(1)
-        self.add_btn.setText("ADD TO BILL")
-        self.left_status.setText("")
-        self.unit_selector.setVisible(False)
-        self.inp_patient.clear()
-        self.inp_doctor.clear()
-
-    def start_new_bill(self):
-        self.clear_bill()
-        self.current_bill_id = None
-        self.save_btn.setText("CHECKOUT & SAVE")
-        self.left_status.setStyleSheet(f"color: {COLOR_BLUE_BTN};")
-        self.left_status.setText("Started New Bill")
-
-    # --- NEW HELPER FOR PHARMACY DETAILS ---
-    def get_pharmacy_details(self):
-        """Fetches the first row from the Pharmacy table."""
-        try:
-            conn = database.get_connection()
-            if not conn: return None
-            cur = conn.cursor()
-            cur.execute("SELECT p_name, phone, location FROM Pharmacy LIMIT 1")
-            row = cur.fetchone()
-            conn.close()
-            if row:
-                return {"name": row[0], "phone": row[1], "address": row[2]}
-        except Exception as e:
-            print("Error fetching pharmacy details:", e)
-        # Default fallback if DB is empty or error
-        return {"name": "My Pharmacy", "phone": "000-000-0000", "address": "Local Address"}
+    def remove_item(self, row, col):
+        if row >= 0:
+            self.bill_items.pop(row)
+            self.refresh_table()
+            self.search_input.setFocus()
 
     def save_bill(self):
         if not self.bill_items:
-            # Force black text for this popup and buttons
-            msg = QMessageBox(self)
-            msg.setWindowTitle("Empty Bill")
-            msg.setText("Cannot checkout an empty bill.")
-            msg.setIcon(QMessageBox.Icon.Warning)
-            msg.setStyleSheet("""
-                QMessageBox { background-color: white; }
-                QLabel { color: black; }
-                QPushButton { color: black; background-color: #f0f0f0; border: 1px solid #ccc; padding: 5px 15px; border-radius: 4px; }
-                QPushButton:hover { background-color: #e0e0e0; }
-            """)
-            msg.exec()
+            QMessageBox.warning(self, "Empty Bill", "Please add items first.")
             return
 
         pat_name = self.inp_patient.text().strip()
         doc_name = self.inp_doctor.text().strip()
+        pay_method = self.cmb_payment.currentText()  # Get Payment Method
+        total = sum(x['total'] for x in self.bill_items)
+        date_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        conn = None
+        conn = database.get_connection()
+        if not conn: return
+        cur = conn.cursor()
+        
         try:
-            conn = database.get_connection()
-            if not conn: raise Exception("Could not connect to database")
-            cur = conn.cursor()
+            # 1. Insert Bill Header
+            cur.execute("""
+                INSERT INTO Bill (patient_name, doctor_name, bill_date, total_sum, payment_method)
+                VALUES (?, ?, ?, ?, ?)
+            """, (pat_name, doc_name, date_str, total, pay_method))
+            bill_id = cur.lastrowid
             
-            bill_date = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            total = sum(it["total"] for it in self.bill_items)
-            payment_method = self.payment_combo.currentText()
-
-            # --- 1. HANDLE BILL HEADER ---
-            if self.current_bill_id is not None:
-                # Update Logic
-                cur.execute("SELECT Med_id, quantity FROM Bill_Item WHERE Bill_id = ?", (self.current_bill_id,))
-                old_items = cur.fetchall()
-                for o_med_id, o_qty in old_items:
-                    cur.execute("UPDATE Medicine SET Quantity = Quantity + ? WHERE Med_id = ?", (o_qty, o_med_id))
-                
-                cur.execute("DELETE FROM Bill_Item WHERE Bill_id = ?", (self.current_bill_id,))
+            # 2. Insert Items & Update Stock
+            for item in self.bill_items:
                 cur.execute("""
-                    UPDATE Bill 
-                    SET total_sum = ?, payment_method = ?, bill_date = ?, patient = ?, doctor = ?
-                    WHERE Bill_id = ?
-                """, (total, payment_method, bill_date, pat_name, doc_name, self.current_bill_id))
+                    INSERT INTO Bill_Item (Bill_id, Med_id, quantity, unit_price, total_price)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (bill_id, item['med_id'], item['qty'], item['price'], item['total']))
                 
-                bill_id = self.current_bill_id
-                action_type = "Updated"
-            else:
-                # Insert Logic
-                cur.execute("""
-                    INSERT INTO Bill (bill_date, discount, total_sum, payment_method, patient, doctor)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                """, (bill_date, 0, total, payment_method, pat_name, doc_name))
+                cur.execute("UPDATE Medicine SET Quantity = Quantity - ? WHERE Med_id=?", 
+                            (item['qty_deduct'], item['med_id']))
                 
-                bill_id = cur.lastrowid
-                self.current_bill_id = bill_id
-                action_type = "Saved"
-
-            # --- 2. INSERT ITEMS & DEDUCT STOCK ---
-            for it in self.bill_items:
-                cur.execute("""
-                    INSERT INTO Bill_Item (Bill_id, Med_id, quantity)
-                    VALUES (?, ?, ?)
-                """, (bill_id, it["med_id"], it["qty_db"]))
-                
-                cur.execute("UPDATE Medicine SET Quantity = Quantity - ? WHERE Med_id = ?",
-                            (it["qty_db"], it["med_id"]))
-
             conn.commit()
-            conn.close()
-
-            self.all_meds_cache = database.get_all_medicines()
-            self.populate_match_list(self.all_meds_cache)
-            self.save_btn.setText("UPDATE BILL")
-
-            # --- SUCCESS POPUP WITH BLACK TEXT FOR BUTTONS & LABEL ---
-            msg = QMessageBox(self)
-            msg.setWindowTitle("Success")
-            msg.setText(f"Bill #{bill_id} {action_type} Successfully!\n\nDo you want to print the receipt?")
-            msg.setIcon(QMessageBox.Icon.Question)
-            msg.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
             
-            # EXPLICITLY STYLE QBUTTONS TO BE VISIBLE
-            msg.setStyleSheet("""
-                QMessageBox { background-color: white; }
-                QLabel { color: black; font-weight: bold; }
-                QPushButton { color: black; background-color: #f0f0f0; border: 1px solid #ccc; padding: 5px 15px; border-radius: 4px; }
-                QPushButton:hover { background-color: #e0e0e0; }
-            """)
+            # 3. Print
+            self.print_receipt(bill_id, pat_name, doc_name, date_str, pay_method)
             
-            if msg.exec() == QMessageBox.StandardButton.Yes:
-                self.print_current_bill_logic(bill_id)
+            # 4. Reset UI
+            self.bill_items = []
+            self.refresh_table()
+            self.inp_patient.clear()
+            self.inp_doctor.clear()
+            self.cmb_payment.setCurrentIndex(0) # Reset Payment
+            self.refresh_cache() 
             
         except Exception as e:
-            if conn: conn.close()
-            print(f"Error: {e}")
+            QMessageBox.critical(self, "Error", str(e))
+        finally:
+            conn.close()
+
+    def print_receipt(self, bill_id, pat, doc, date_str, pay_mode):
+        printer = QPrinter()
+        
+        p_name = "Pharmacy"
+        p_addr = "Address"
+        p_phone = ""
+        p_gst = ""
+        
+        conn = database.get_connection()
+        cur = conn.cursor()
+        try:
+            cur.execute("SELECT p_name, location, phone, GSTIN FROM Pharmacy LIMIT 1")
+            row = cur.fetchone()
+            if row:
+                p_name, p_addr, p_phone, p_gst = row
+        except: pass
+        conn.close()
+
+        html = f"""
+        <h2 align='center'>{p_name}</h2>
+        <p align='center'>{p_addr}<br>Phone: {p_phone}<br>GSTIN: {p_gst}</p>
+        <hr>
+        <p><b>Bill No:</b> {bill_id} &nbsp;&nbsp; <b>Date:</b> {date_str}<br>
+           <b>Patient:</b> {pat if pat else 'Walk-in'} &nbsp;&nbsp; <b>Dr:</b> {doc if doc else '-'}<br>
+           <b>Payment Mode:</b> {pay_mode}</p>
+        
+        <table width='100%' cellpadding='4' cellspacing='0' border='1' style='border-collapse: collapse; font-size: 10pt;'>
+            <tr style='background-color: #f0f0f0;'>
+                <th>Item</th>
+                <th>HSN</th>
+                <th>Qty</th>
+                <th>Price</th>
+                <th>Disc%</th>
+                <th>Total</th>
+            </tr>
+        """
+        
+        grand_total = 0
+        total_tax = 0
+        
+        for item in self.bill_items:
+            grand_total += item['total']
+            total_tax += item['tax_amt']
+            hsn = item['hsn'] if item['hsn'] else "-"
             
-            err = QMessageBox(self)
-            err.setWindowTitle("Error")
-            err.setText(str(e))
-            err.setIcon(QMessageBox.Icon.Critical)
-            err.setStyleSheet("""
-                QMessageBox { background-color: white; }
-                QLabel { color: black; }
-                QPushButton { color: black; background-color: #f0f0f0; border: 1px solid #ccc; padding: 5px 15px; border-radius: 4px; }
-                QPushButton:hover { background-color: #e0e0e0; }
-            """)
-            err.exec()
+            html += f"""
+            <tr>
+                <td>{item['name']} <br><small><i>({item['unit']})</i></small></td>
+                <td align='center'>{hsn}</td>
+                <td align='center'>{item['qty']}</td>
+                <td align='right'>{item['price']:.2f}</td>
+                <td align='center'>{item['discount_pct']}%</td>
+                <td align='right'>{item['total']:.2f}</td>
+            </tr>
+            """
+            
+        html += f"""
+        </table>
+        <h3 align='right'>Net Payable: ₹{grand_total:.2f}</h3>
+        <p align='right' style='font-size:10px;'>
+            (Includes GST: ₹{total_tax:.2f})
+        </p>
+        <hr>
+        <p align='center'>Thank you! Get Well Soon.</p>
+        """
 
-    # --- UPDATED PRINT LOGIC ---
-    def print_current_bill_logic(self, bill_id):
-        # 1. Get Pharmacy Details
-        pharma = self.get_pharmacy_details()
-        p_name = pharma.get('name', 'Pharmacy Name')
-        p_phone = pharma.get('phone', '')
-        p_addr = pharma.get('address', '')
-
-        # 2. Get Date
-        now_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-
-        lines = []
-        # --- HEADER (CENTERED) ---
-        lines.append(f"<h1 align='center' style='margin-bottom:0;'>{p_name}</h1>")
-        lines.append(f"<p align='center' style='margin-top:0;'>{p_addr}<br>Phone: {p_phone}</p>")
-        lines.append("<hr>")
-
-        # --- BILL INFO (Date & ID) ---
-        # Using a simple table to separate ID (Left) and Date (Right)
-        lines.append("<table width='100%'>")
-        lines.append(f"<tr><td align='left'><b>Bill No:</b> {bill_id}</td><td align='right'><b>Date:</b> {now_str}</td></tr>")
-        lines.append("</table>")
-        lines.append("<br>")
-
-        # --- MAIN ITEMS TABLE ---
-        # Fixed alignment: Name(Left), Qty(Center), Price(Right), Total(Right)
-        lines.append("<table width='100%' cellspacing='0' cellpadding='5' style='border-collapse: collapse; border-bottom: 1px solid black;'>")
-        lines.append("<thead>")
-        lines.append("<tr style='background-color: #f0f0f0;'>")
-        lines.append("<th align='left'>Item Name</th>")
-        lines.append("<th align='center'>Qty</th>")
-        lines.append("<th align='right'>Price</th>")
-        lines.append("<th align='right'>Total</th>")
-        lines.append("</tr>")
-        lines.append("</thead>")
-        lines.append("<tbody>")
-        
-        total = 0
-        for it in self.bill_items:
-            lines.append("<tr>")
-            lines.append(f"<td align='left'>{it['name']}</td>")
-            lines.append(f"<td align='center'>{it['qty_display']}</td>")
-            lines.append(f"<td align='right'>{it['unit_price']:.2f}</td>")
-            lines.append(f"<td align='right'>{it['total']:.2f}</td>")
-            lines.append("</tr>")
-            total += it['total']
-        
-        lines.append("</tbody>")
-        lines.append("</table>")
-        
-        # --- FOOTER TOTAL ---
-        lines.append(f"<h3 align='right'>Grand Total: {total:.2f}</h3>")
-        lines.append("<p align='center' style='font-size: 10px;'>Thank you for your business!</p>")
-        
-        html = "".join(lines)
         doc = QTextDocument()
         doc.setHtml(html)
         
-        printer = QPrinter()
         dlg = QPrintDialog(printer, self)
         if dlg.exec():
             doc.print(printer)
-    
-    def refresh_cache(self):
-        try:
-            self.all_meds_cache = database.get_all_medicines()
-            self.populate_match_list(self.all_meds_cache)
-        except Exception as e:
-            print("Error refreshing billing cache:", e)
 
     def load_bill_for_editing(self, bill_id):
-        try:
-            conn = database.get_connection()
-            cursor = conn.cursor()
-            
-            cursor.execute("SELECT patient, doctor, payment_method FROM Bill WHERE Bill_id = ?", (bill_id,))
-            header = cursor.fetchone()
-            if not header: return
-
-            cursor.execute("""
-                SELECT bi.Med_id, bi.quantity, m.Med_name, m.Sale_Price, m.rate_per_tab, m.tabs_per_strip, m.Type
-                FROM Bill_Item bi
-                JOIN Medicine m ON bi.Med_id = m.Med_id
-                WHERE bi.Bill_id = ?
-            """, (bill_id,))
-            items = cursor.fetchall()
-            conn.close()
-            
-            self.start_new_bill()
-            self.current_bill_id = bill_id
-            self.save_btn.setText("UPDATE BILL")
-            self.left_status.setText(f"Editing Bill #{bill_id}")
-            
-            self.inp_patient.setText(header[0])
-            self.inp_doctor.setText(header[1])
-            self.payment_combo.setCurrentText(header[2])
-            
-            for row in items:
-                med_id, db_qty, name, pack_price, loose_price, tabs_per, mtype = row
-                
-                is_fractional = (db_qty % 1 != 0)
-                
-                if is_fractional:
-                    is_loose = True
-                    qty_display = int(round(db_qty * tabs_per))
-                    unit_price = loose_price if loose_price else 0
-                    final_name = f"{name} (Loose)"
-                else:
-                    is_loose = False
-                    qty_display = int(db_qty)
-                    unit_price = pack_price
-                    final_name = name
-
-                self.bill_items.append({
-                    "med_id": med_id,
-                    "name": final_name,
-                    "qty_display": qty_display,
-                    "qty_db": db_qty,
-                    "unit_price": unit_price,
-                    "total": qty_display * unit_price,
-                    "is_loose": is_loose
-                })
-            
-            self.refresh_bill_table()
-            
-        except Exception as e:
-            print("Error loading bill:", e)
+        QMessageBox.information(self, "Info", "Edit feature coming soon.")
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

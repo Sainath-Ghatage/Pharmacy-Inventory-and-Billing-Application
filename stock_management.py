@@ -17,22 +17,20 @@ import database  # Ensure this matches your DB file name
 COLOR_BG = "#f8f9fa"
 COLOR_WHITE = "#ffffff"
 COLOR_NAVBAR = "#0d47a1"
-COLOR_TEXT = "#212529" # Black text
+COLOR_TEXT = "#212529" 
 COLOR_BORDER = "#dee2e6"
 COLOR_GREEN_BTN = "#198754"
 COLOR_BLUE_BTN = "#0d6efd"
 COLOR_DELETE = "#dc3545"
 COLOR_EDIT = "#ffc107"
-COLOR_SELECTION = "#e3f2fd" # Light Blue for selection
-COLOR_EXPIRED= "#d20112"  # Light Red for expired items
+COLOR_SELECTION = "#e3f2fd" 
+COLOR_EXPIRED= "#d20112" 
 
-# Global Stylesheet for consistency
 STYLE_GLOBAL = f"""
     QWidget {{
         font-family: 'Segoe UI', sans-serif;
         color: {COLOR_TEXT};
     }}
-    /* Fix for Inputs */
     QLineEdit, QSpinBox, QDoubleSpinBox, QDateEdit {{
         border: 1px solid {COLOR_BORDER};
         border-radius: 4px;
@@ -41,30 +39,24 @@ STYLE_GLOBAL = f"""
         color: {COLOR_TEXT};
         min-height: 25px;
     }}
-    QLineEdit:focus, QComboBox:focus {{ border: 1px solid {COLOR_NAVBAR}; }}
-
-    /* Fix for Dropdowns (Text Color) */
+    QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus {{ 
+        border: 1px solid {COLOR_NAVBAR}; 
+    }}
     QComboBox {{
         border: 1px solid {COLOR_BORDER};
         border-radius: 4px;
         padding: 5px;
         background-color: {COLOR_WHITE};
-        color: {COLOR_TEXT}; /* Black Text */
+        color: {COLOR_TEXT};
     }}
     QComboBox QAbstractItemView {{
         background-color: {COLOR_WHITE};
-        color: {COLOR_TEXT}; /* Black Text in list */
+        color: {COLOR_TEXT};
         selection-background-color: {COLOR_SELECTION};
         selection-color: {COLOR_TEXT};
     }}
-
-    /* Fix for Popups (Message Box) */
-    QMessageBox {{
-        background-color: {COLOR_WHITE};
-    }}
-    QMessageBox QLabel {{
-        color: {COLOR_TEXT}; /* Black Text */
-    }}
+    QMessageBox {{ background-color: {COLOR_WHITE}; }}
+    QMessageBox QLabel {{ color: {COLOR_TEXT}; }}
     QMessageBox QPushButton {{
         background-color: {COLOR_BG};
         border: 1px solid {COLOR_BORDER};
@@ -83,9 +75,8 @@ class StockTable(QTableWidget):
         self.setColumnCount(len(columns))
         self.setHorizontalHeaderLabels(columns)
         
-        # --- FIX 1: Make rows taller so buttons fit ---
         self.verticalHeader().setVisible(False)
-        self.verticalHeader().setDefaultSectionSize(50)  # Row height = 50px
+        self.verticalHeader().setDefaultSectionSize(50)
         
         self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -100,17 +91,15 @@ class StockTable(QTableWidget):
         # 2. Actions Column (Last)
         last_col_idx = len(columns) - 1
         header.setSectionResizeMode(last_col_idx, QHeaderView.ResizeMode.Fixed)
-        self.setColumnWidth(last_col_idx, 180) # Wide enough for text buttons
+        self.setColumnWidth(last_col_idx, 160)
 
         # 3. Middle Columns
-        for i in range(2, last_col_idx):
-            header.setSectionResizeMode(i, QHeaderView.ResizeMode.Fixed)
-            self.setColumnWidth(i, 110)
+        for i in range(1, last_col_idx):
+            if columns[i] == "Name":
+                header.setSectionResizeMode(i, QHeaderView.ResizeMode.Stretch)
+            else:
+                header.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
 
-        # 4. Name Column (Stretch)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-
-        # Styles
         self.setStyleSheet(f"""
             QTableWidget {{ 
                 border: 1px solid {COLOR_BORDER}; 
@@ -141,8 +130,8 @@ class StockTable(QTableWidget):
 
 # --- MEDICINE FORM WIDGET ---
 class MedicineFormWidget(QWidget):
-    save_clicked = pyqtSignal(dict)           # Save & Close
-    save_add_more_clicked = pyqtSignal(dict)  # Save & Clear (Keep open)
+    save_clicked = pyqtSignal(dict)           
+    save_add_more_clicked = pyqtSignal(dict)  
     cancel_clicked = pyqtSignal()
 
     def __init__(self):
@@ -164,6 +153,9 @@ class MedicineFormWidget(QWidget):
         form_layout.setSpacing(15)
 
         # -- Fields --
+        self.inp_barcode = QLineEdit()
+        self.inp_barcode.setPlaceholderText("Scan Barcode Here...")
+        
         self.inp_name = QLineEdit()
         self.inp_mfg = QLineEdit()
         
@@ -175,6 +167,19 @@ class MedicineFormWidget(QWidget):
         ]
         self.inp_type.addItems(types)
         self.inp_type.currentTextChanged.connect(self.toggle_strip_fields)
+
+        # Location & Taxes
+        self.inp_rack = QLineEdit()
+        self.inp_hsn = QLineEdit()
+        
+        self.inp_gst = QDoubleSpinBox()
+        self.inp_gst.setRange(0, 100)
+        self.inp_gst.setSuffix("%")
+        self.inp_gst.setValue(12.00) # Default GST
+
+        self.inp_discount = QDoubleSpinBox()
+        self.inp_discount.setRange(0, 100)
+        self.inp_discount.setSuffix("%")
 
         self.inp_qty = QSpinBox()
         self.inp_qty.setRange(0, 100000)
@@ -196,12 +201,31 @@ class MedicineFormWidget(QWidget):
         self.inp_date_exp.setDate(QDate.currentDate().addYears(1))
 
         # -- Add Rows --
+        self.add_row(form_layout, "Barcode / QR:", self.inp_barcode)
         self.add_row(form_layout, "Medicine Name:", self.inp_name)
         self.add_row(form_layout, "Manufacturer:", self.inp_mfg)
         self.add_row(form_layout, "Type:", self.inp_type)
-        self.add_row(form_layout, "Total Quantity (Packs/Strips):", self.inp_qty)
+        
+        # New Row for Rack & HSN
+        row_loc = QHBoxLayout()
+        self.inp_rack.setPlaceholderText("Rack No")
+        self.inp_hsn.setPlaceholderText("HSN Code")
+        row_loc.addWidget(self.inp_rack)
+        row_loc.addWidget(self.inp_hsn)
+        form_layout.addRow(QLabel("Location / HSN:"), row_loc)
+
+        self.add_row(form_layout, "Total Stock (Units):", self.inp_qty)
         self.add_row(form_layout, "Purchase Price:", self.inp_p_price)
-        self.add_row(form_layout, "Sale Price:", self.inp_s_price)
+        self.add_row(form_layout, "Sale Price (MRP):", self.inp_s_price)
+        
+        # Taxes Row
+        row_tax = QHBoxLayout()
+        row_tax.addWidget(QLabel("GST:"))
+        row_tax.addWidget(self.inp_gst)
+        row_tax.addWidget(QLabel("Discount:"))
+        row_tax.addWidget(self.inp_discount)
+        form_layout.addRow(QLabel("Taxes & Offers:"), row_tax)
+
         self.add_row(form_layout, "Mfg Date:", self.inp_date_mfg)
         self.add_row(form_layout, "Exp Date:", self.inp_date_exp)
 
@@ -257,7 +281,6 @@ class MedicineFormWidget(QWidget):
     def add_row(self, layout, label_text, widget):
         lbl = QLabel(label_text)
         lbl.setStyleSheet(STYLE_LABEL)
-        # widget style handled globally
         layout.addRow(lbl, widget)
 
     def toggle_strip_fields(self, type_text):
@@ -265,30 +288,40 @@ class MedicineFormWidget(QWidget):
         self.grp_strip.setVisible(is_strip_type)
 
     def load_data(self, data):
+        """
+        Expects data tuple:
+        0:id, 1:name, 2:mfg, 3:type, 4:pp, 5:sp, 
+        6:tabs, 7:rate, 8:qty, 9:mfg_d, 10:exp_d, 
+        11:hsn, 12:rack, 13:gst, 14:disc, 15:barcode
+        """
         self.med_id = data[0]
         self.lbl_title.setText("Edit Medicine")
-        # Hide "Add Another" when editing an existing item
         self.btn_save_more.setVisible(False) 
         
         self.inp_name.setText(str(data[1]))
         self.inp_mfg.setText(str(data[2]))
         self.inp_type.setCurrentText(str(data[3]))
-        
-        tabs_per = data[6] if data[6] else 0
-        rate_per = data[7] if data[7] else 0.0
-        
-        self.inp_tabs_per_strip.setValue(int(tabs_per))
-        self.inp_rate_per_tab.setValue(float(rate_per))
-        
         self.inp_qty.setValue(int(data[8]))
         self.inp_p_price.setValue(float(data[4]))
         self.inp_s_price.setValue(float(data[5]))
+        
+        # New Fields
+        self.inp_hsn.setText(str(data[11]) if data[11] else "")
+        self.inp_rack.setText(str(data[12]) if data[12] else "")
+        self.inp_gst.setValue(float(data[13]) if data[13] else 0.0)
+        self.inp_discount.setValue(float(data[14]) if data[14] else 0.0)
+        self.inp_barcode.setText(str(data[15]) if data[15] else "")
+
+        tabs_per = data[6] if data[6] else 0
+        rate_per = data[7] if data[7] else 0.0
+        self.inp_tabs_per_strip.setValue(int(tabs_per))
+        self.inp_rate_per_tab.setValue(float(rate_per))
 
         try:
             self.inp_date_mfg.setDate(QDate.fromString(data[9], "yyyy-MM-dd"))
             self.inp_date_exp.setDate(QDate.fromString(data[10], "yyyy-MM-dd"))
-        except:
-            pass
+        except: pass
+        
         self.toggle_strip_fields(self.inp_type.currentText())
 
     def get_form_data(self):
@@ -303,28 +336,36 @@ class MedicineFormWidget(QWidget):
             "mfg_date": self.inp_date_mfg.date().toString("yyyy-MM-dd"),
             "exp_date": self.inp_date_exp.date().toString("yyyy-MM-dd"),
             "tabs_per_strip": self.inp_tabs_per_strip.value() if self.grp_strip.isVisible() else 1,
-            "rate_per_tab": self.inp_rate_per_tab.value() if self.grp_strip.isVisible() else 0.0
+            "rate_per_tab": self.inp_rate_per_tab.value() if self.grp_strip.isVisible() else 0.0,
+            # New Fields
+            "hsn": self.inp_hsn.text(),
+            "rack": self.inp_rack.text(),
+            "gst": self.inp_gst.value(),
+            "discount": self.inp_discount.value(),
+            "barcode": self.inp_barcode.text()
         }
 
     def handle_save(self):
-        data = self.get_form_data()
-        self.save_clicked.emit(data)
+        self.save_clicked.emit(self.get_form_data())
 
     def handle_save_more(self):
-        data = self.get_form_data()
-        self.save_add_more_clicked.emit(data)
+        self.save_add_more_clicked.emit(self.get_form_data())
 
     def clear_fields_only(self):
-        """Clears inputs but keeps the form open (for 'Add Another')"""
         self.med_id = None
         self.lbl_title.setText("Add New Medicine")
-        self.btn_save_more.setVisible(True) # Ensure it's visible for new entries
+        self.btn_save_more.setVisible(True)
+        self.inp_barcode.clear()
         self.inp_name.clear()
         self.inp_mfg.clear()
         self.inp_qty.setValue(0)
         self.inp_p_price.setValue(0)
         self.inp_s_price.setValue(0)
-        self.inp_name.setFocus()
+        self.inp_rack.clear()
+        self.inp_hsn.clear()
+        self.inp_gst.setValue(12.0)
+        self.inp_discount.setValue(0)
+        self.inp_barcode.setFocus()
 
     def clear_and_close(self):
         self.clear_fields_only()
@@ -337,7 +378,7 @@ class StockInterface(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Stock Management")
-        self.setStyleSheet(STYLE_GLOBAL) # Apply global fixes
+        self.setStyleSheet(STYLE_GLOBAL)
         self.init_ui()
         self.load_all_data()
 
@@ -359,7 +400,7 @@ class StockInterface(QWidget):
         lbl_header.setStyleSheet(f"font-size: 24px; font-weight: bold; color: {COLOR_NAVBAR};")
         
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("🔍 Search Medicine...")
+        self.search_input.setPlaceholderText("🔍 Search Name or Barcode...")
         self.search_input.setFixedWidth(250)
         self.search_input.textChanged.connect(self.load_all_data)
         
@@ -386,14 +427,14 @@ class StockInterface(QWidget):
             QTabBar::tab:selected {{ background: {COLOR_WHITE}; border-top: 3px solid {COLOR_NAVBAR}; font-weight: bold; color: {COLOR_TEXT}; }}
         """)
         
-        # 1. All Medicines Tab
-        self.table_all = StockTable(["ID", "Name", "Type", "Qty", "Sale Price", "Exp Date", "Actions"])
+        # 1. All Medicines Tab (Added Rack Column)
+        self.table_all = StockTable(["ID", "Name", "Type", "Rack", "Qty", "Sale Price", "Exp Date", "Actions"])
         
         # 2. Low Stock Tab
-        self.table_low = StockTable(["ID", "Name", "Type", "Qty", "Status", "Actions"])
+        self.table_low = StockTable(["ID", "Name", "Type", "Rack", "Qty", "Status", "Actions"])
         
         # 3. Expiry Tab
-        self.table_exp = StockTable(["ID", "Name", "Exp Date", "Days Remaining", "Status", "Actions"])
+        self.table_exp = StockTable(["ID", "Name", "Exp Date", "Days Left", "Status", "Actions"])
 
         self.tabs.addTab(self.table_all, "All Medicines")
         self.tabs.addTab(self.table_low, "Low Stock")
@@ -424,10 +465,11 @@ class StockInterface(QWidget):
         if not conn: return
         cursor = conn.cursor()
         
-        # Ensure we select 'Type' correctly
+        # Updated Query with New Columns
         cursor.execute("""
             SELECT Med_id, Med_name, Manufacturer, Type, Purchase_Price, Sale_Price, 
-                   tabs_per_strip, rate_per_tab, Quantity, MFG_Date, EXP_Date 
+                   tabs_per_strip, rate_per_tab, Quantity, MFG_Date, EXP_Date,
+                   hsn_code, rack_no, gst_rate, discount, barcode
             FROM Medicine ORDER BY Med_name ASC
         """)
         rows = cursor.fetchall()
@@ -442,7 +484,10 @@ class StockInterface(QWidget):
 
         for r in rows:
             name = str(r[1])
-            if query and query not in name.lower():
+            barcode = str(r[15]) if r[15] else ""
+            
+            # Filter by Name OR Barcode
+            if query and (query not in name.lower() and query not in barcode.lower()):
                 continue
                 
             med_id = r[0]
@@ -450,6 +495,7 @@ class StockInterface(QWidget):
             qty = r[8]
             sale_price = r[5]
             exp_date_str = r[10]
+            rack = r[12] if r[12] else "-"
 
             try:
                 exp_dt = datetime.strptime(exp_date_str, "%Y-%m-%d").date()
@@ -463,9 +509,10 @@ class StockInterface(QWidget):
             self.table_all.setItem(row_all, 0, QTableWidgetItem(str(med_id)))
             self.table_all.setItem(row_all, 1, QTableWidgetItem(name))
             self.table_all.setItem(row_all, 2, QTableWidgetItem(m_type))
-            self.table_all.setItem(row_all, 3, QTableWidgetItem(str(qty)))
-            self.table_all.setItem(row_all, 4, QTableWidgetItem(f"₹{sale_price:.2f}"))
-            self.table_all.setItem(row_all, 5, QTableWidgetItem(exp_date_str))
+            self.table_all.setItem(row_all, 3, QTableWidgetItem(rack))
+            self.table_all.setItem(row_all, 4, QTableWidgetItem(str(qty)))
+            self.table_all.setItem(row_all, 5, QTableWidgetItem(f"₹{sale_price:.2f}"))
+            self.table_all.setItem(row_all, 6, QTableWidgetItem(exp_date_str))
             self.add_action_buttons(self.table_all, row_all, r)
             row_all += 1
 
@@ -475,12 +522,13 @@ class StockInterface(QWidget):
                 self.table_low.setItem(row_low, 0, QTableWidgetItem(str(med_id)))
                 self.table_low.setItem(row_low, 1, QTableWidgetItem(name))
                 self.table_low.setItem(row_low, 2, QTableWidgetItem(m_type))
-                self.table_low.setItem(row_low, 3, QTableWidgetItem(str(qty)))
+                self.table_low.setItem(row_low, 3, QTableWidgetItem(rack))
+                self.table_low.setItem(row_low, 4, QTableWidgetItem(str(qty)))
                 
                 status_item = QTableWidgetItem("Out of Stock" if qty == 0 else "Low Stock")
                 status_item.setForeground(QColor("#dc3545") if qty == 0 else QColor("#ffc107"))
                 status_item.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
-                self.table_low.setItem(row_low, 4, status_item)
+                self.table_low.setItem(row_low, 5, status_item)
                 
                 self.add_action_buttons(self.table_low, row_low, r)
                 row_low += 1
@@ -514,11 +562,9 @@ class StockInterface(QWidget):
     def add_action_buttons(self, table, row, row_data):
         btn_frame = QFrame()
         layout = QHBoxLayout(btn_frame)
-        layout.setContentsMargins(5, 5, 5, 5) # Add margin so buttons don't touch edges
+        layout.setContentsMargins(5, 5, 5, 5) 
         layout.setSpacing(10)
 
-        # --- STYLE FOR BUTTONS ---
-        # Using a variable to avoid repeating the long string
         btn_style = """
             QPushButton {
                 color: white;
@@ -530,16 +576,14 @@ class StockInterface(QWidget):
             }
         """
 
-        # --- EDIT BUTTON ---
         btn_edit = QPushButton("Edit")
-        btn_edit.setFixedHeight(30) # FIX 2: Force button height
+        btn_edit.setFixedHeight(30)
         btn_edit.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_edit.clicked.connect(lambda: self.show_edit_form(row_data))
         btn_edit.setStyleSheet(btn_style + f"QPushButton {{ background-color: {COLOR_NAVBAR}; }} QPushButton:hover {{ background-color: #0a3d8f; }}")
 
-        # --- DELETE BUTTON ---
         btn_del = QPushButton("Delete")
-        btn_del.setFixedHeight(30) # FIX 2: Force button height
+        btn_del.setFixedHeight(30)
         btn_del.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_del.clicked.connect(lambda: self.delete_medicine(row_data[0]))
         btn_del.setStyleSheet(btn_style + f"QPushButton {{ background-color: {COLOR_DELETE}; }} QPushButton:hover {{ background-color: #b02a37; }}")
@@ -550,7 +594,6 @@ class StockInterface(QWidget):
         table.setCellWidget(row, table.columnCount()-1, btn_frame)
 
     def save_data_to_db(self, data):
-        """Helper to run the DB insert/update"""
         conn = database.get_connection()
         if not conn: return False
         cursor = conn.cursor()
@@ -561,24 +604,29 @@ class StockInterface(QWidget):
                     UPDATE Medicine SET 
                         Med_name=?, Manufacturer=?, Type=?, Quantity=?, 
                         Purchase_Price=?, Sale_Price=?, tabs_per_strip=?, rate_per_tab=?,
-                        MFG_Date=?, EXP_Date=?
+                        MFG_Date=?, EXP_Date=?, 
+                        hsn_code=?, rack_no=?, gst_rate=?, discount=?, barcode=?
                     WHERE Med_id=?
                 """, (
                     data['name'], data['mfg'], data['type'], data['qty'],
                     data['p_price'], data['s_price'], data['tabs_per_strip'], data['rate_per_tab'],
-                    data['mfg_date'], data['exp_date'], data['med_id']
+                    data['mfg_date'], data['exp_date'],
+                    data['hsn'], data['rack'], data['gst'], data['discount'], data['barcode'],
+                    data['med_id']
                 ))
             else: # INSERT
                 cursor.execute("""
                     INSERT INTO Medicine (
                         Med_name, Manufacturer, Type, Quantity, 
                         Purchase_Price, Sale_Price, tabs_per_strip, rate_per_tab,
-                        MFG_Date, EXP_Date
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        MFG_Date, EXP_Date,
+                        hsn_code, rack_no, gst_rate, discount, barcode
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     data['name'], data['mfg'], data['type'], data['qty'],
                     data['p_price'], data['s_price'], data['tabs_per_strip'], data['rate_per_tab'],
-                    data['mfg_date'], data['exp_date']
+                    data['mfg_date'], data['exp_date'],
+                    data['hsn'], data['rack'], data['gst'], data['discount'], data['barcode']
                 ))
             conn.commit()
             success = True
@@ -592,12 +640,11 @@ class StockInterface(QWidget):
     def process_save_and_close(self, data):
         if self.save_data_to_db(data):
             QMessageBox.information(self, "Success", "Medicine saved successfully!")
-            self.stacked_widget.setCurrentIndex(0) # Go back to dashboard
+            self.stacked_widget.setCurrentIndex(0) 
             self.load_all_data()
 
     def process_save_and_continue(self, data):
         if self.save_data_to_db(data):
-            # Show small toast/message but stay on page
             msg = QMessageBox(self)
             msg.setWindowTitle("Success")
             msg.setText("Medicine added! Ready for next entry.")
@@ -605,7 +652,7 @@ class StockInterface(QWidget):
             msg.exec()
             
             self.form_widget.clear_fields_only()
-            self.load_all_data() # Update background list
+            self.load_all_data()
 
     def delete_medicine(self, med_id):
         reply = QMessageBox.question(self, "Confirm Delete", "Permanently delete this medicine?",
