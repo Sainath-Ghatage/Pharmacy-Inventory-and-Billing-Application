@@ -230,15 +230,17 @@ class DashboardInterface(QWidget):
         
         for bid, pat, amt, date in rows:
             row_widget = QFrame()
-            row_widget.setStyleSheet(f"border-bottom: 1px solid #eee; padding: 5px;")
+            # Added an explicit text color for the whole row widget to be safe
+            row_widget.setStyleSheet(f"border-bottom: 1px solid #eee; padding: 5px; color: {COLOR_TEXT};")
             rl = QHBoxLayout(row_widget)
             
             lbl_id = QLabel(f"#{bid}")
-            lbl_id.setStyleSheet("font-weight: bold; color: #0d47a1; width: 40px;")
+            lbl_id.setStyleSheet("font-weight: bold; color: #0d47a1;")
             
-            # Ensure pat is not None
             display_name = pat if pat else "Walk-in"
             lbl_info = QLabel(display_name)
+            # Explicitly set the name color to black/dark text
+            lbl_info.setStyleSheet(f"color: {COLOR_TEXT};") 
             
             lbl_amt = QLabel(f"₹{amt:.2f}")
             lbl_amt.setStyleSheet("font-weight: bold; color: #198754;")

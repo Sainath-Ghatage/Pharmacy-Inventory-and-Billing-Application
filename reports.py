@@ -1,14 +1,15 @@
 import sys
 import sqlite3
 import datetime
-import numpy as np 
 from PyQt6.QtWidgets import (
-    QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
-    QComboBox, QSpinBox, QRadioButton, QButtonGroup, 
-    QFrame, QMessageBox, QSizePolicy, QListView
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
+    QComboBox, QDateEdit, QPushButton, QFrame, 
+    QTableWidget, QTableWidgetItem, QHeaderView, 
+    QTreeWidget, QTreeWidgetItem, QStackedWidget, 
+    QMessageBox, QFileDialog, QAbstractItemView, QSizePolicy
 )
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont
+from PyQt6.QtCore import Qt, QDate
+from PyQt6.QtGui import QColor, QFont
 
 # --- MATPLOTLIB ---
 import matplotlib
@@ -19,436 +20,498 @@ from matplotlib.figure import Figure
 import database
 
 # --- COLORS ---
-COLOR_BG = "#f8f9fa"       
-COLOR_WHITE = "#ffffff"    
-COLOR_NAVBAR = "#0d47a1"   
-COLOR_TEXT = "#212529"     
+COLOR_BG = "#f8f9fa"
+COLOR_WHITE = "#ffffff"
+COLOR_NAVBAR = "#0d47a1"
+COLOR_SIDEBAR = "#e9ecef"
+COLOR_TEXT = "#212529"
+COLOR_ACCENT = "#198754"
 
 class ReportsInterface(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Reports & Analytics")
-        self.showMaximized()
-        self.setStyleSheet(f"background-color: {COLOR_BG}; font-family: 'Segoe UI', Arial, sans-serif;")
+        self.setWindowTitle("Advanced Reports & Analytics")
+        self.setStyleSheet(f"""
+            QWidget {{ background-color: {COLOR_BG}; font-family: 'Segoe UI', sans-serif; color: {COLOR_TEXT}; }}
+            QTableWidget {{ background-color: white; border: 1px solid #ccc; gridline-color: #f0f0f0; }}
+            QTableWidget::item {{ padding: 5px; }}
+            QHeaderView::section {{ background-color: #f1f3f4; padding: 8px; border: none; border-bottom: 1px solid #ccc; font-weight: bold; font-size: 12px; }}
+            QTreeWidget {{ border: 1px solid #ccc; background-color: {COLOR_WHITE}; border-radius: 4px; }}
+            QTreeWidget::item {{ padding: 6px; }}
+            QTreeWidget::item:selected {{ background-color: {COLOR_NAVBAR}; color: white; }}
+        """)
         
         self.init_ui()
-        self.on_report_type_changed() # Set initial state
-        self.generate_report()
+        
+        # Select first report by default
+        top_item = self.tree.topLevelItem(0)
+        if top_item:
+            top_item.setExpanded(True)
+            self.tree.setCurrentItem(top_item.child(0))
+            self.on_report_selected()
 
     def init_ui(self):
-        main_layout = QVBoxLayout(self)
+        main_layout = QHBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
         # ==========================================
-        # 1. TOP CONTROL BAR
+        # 1. LEFT SIDEBAR (REPORT NAVIGATION)
         # ==========================================
-        controls_frame = QFrame()
+        sidebar_frame = QFrame()
+        sidebar_frame.setFixedWidth(260)
+        sidebar_frame.setStyleSheet(f"background-color: {COLOR_SIDEBAR}; border-right: 1px solid #dee2e6;")
+        sidebar_layout = QVBoxLayout(sidebar_frame)
+        sidebar_layout.setContentsMargins(15, 20, 15, 20)
         
-        # --- IMPROVED CSS ---
-        controls_frame.setStyleSheet(f"""
-            QFrame {{ 
-                background-color: {COLOR_WHITE}; 
-                border-bottom: 1px solid #dee2e6; 
-            }}
-            QLabel {{ 
-                font-weight: bold; 
-                color: {COLOR_TEXT}; 
-                margin-right: 5px; 
-            }}
-            QRadioButton {{ 
-                color: {COLOR_TEXT}; 
-                font-size: 14px; 
-            }}
-            
-            /* --- COMBOBOX STYLE --- */
-            QComboBox {{
-                border: 1px solid #ced4da;
-                border-radius: 4px;
-                padding: 5px;
-                padding-left: 10px;
-                background-color: {COLOR_WHITE};
-                color: {COLOR_TEXT};
-                font-size: 14px;
-                min-width: 100px;
-            }}
-            QComboBox:hover {{
-                border: 1px solid {COLOR_NAVBAR};
-            }}
-            /* Removed ::down-arrow styling so the default visible system arrow is used */
-            
-            /* The Dropdown List Popup */
-            QListView {{
-                border: 1px solid #ced4da;
-                background-color: {COLOR_WHITE};
-                selection-background-color: {COLOR_NAVBAR};
-                selection-color: white;
-                color: {COLOR_TEXT};
-                outline: none;
-                padding: 5px;
-            }}
-            
-            /* --- SPINBOX STYLE --- */
-            QSpinBox {{
-                border: 1px solid #ced4da;
-                border-radius: 4px;
-                padding: 5px;
-                background-color: {COLOR_WHITE};
-                color: {COLOR_TEXT};
-            }}
-        """)
+        lbl_nav = QLabel("Report Categories")
+        lbl_nav.setStyleSheet(f"font-weight: bold; font-size: 15px; color: {COLOR_NAVBAR}; margin-bottom: 10px;")
+        sidebar_layout.addWidget(lbl_nav)
 
-        bar_layout = QHBoxLayout(controls_frame)
-        bar_layout.setContentsMargins(15, 10, 15, 10)
-        bar_layout.setSpacing(15)
-
-        # Title
-        lbl_title = QLabel("Analytics")
-        lbl_title.setStyleSheet(f"font-size: 20px; color: {COLOR_NAVBAR}; margin-right: 20px;")
-        bar_layout.addWidget(lbl_title)
-
-        # Report Type
-        bar_layout.addWidget(QLabel("Type:"))
-        self.combo_type = QComboBox()
-        self.combo_type.setView(QListView()) 
-        self.combo_type.addItems(["Sales Report", "Profit & Loss Report"])
-        self.combo_type.setFixedWidth(180)
-        self.combo_type.currentIndexChanged.connect(self.on_report_type_changed)
-        bar_layout.addWidget(self.combo_type)
-
-        # Month
-        bar_layout.addWidget(QLabel("Month:"))
-        self.combo_month = QComboBox()
-        self.combo_month.setView(QListView())
-        self.combo_month.addItems(["January", "February", "March", "April", "May", "June", 
-                                   "July", "August", "September", "October", "November", "December"])
-        self.combo_month.setCurrentIndex(datetime.date.today().month - 1)
-        self.combo_month.setFixedWidth(130)
-        self.combo_month.currentIndexChanged.connect(self.generate_report)
-        bar_layout.addWidget(self.combo_month)
-
-        # Year
-        bar_layout.addWidget(QLabel("Year:"))
-        self.spin_year = QSpinBox()
-        self.spin_year.setRange(2000, 2100)
-        self.spin_year.setValue(datetime.date.today().year)
-        self.spin_year.setFixedWidth(80)
-        self.spin_year.valueChanged.connect(self.generate_report)
-        bar_layout.addWidget(self.spin_year)
-
-        # Separator
-        line = QFrame()
-        line.setFrameShape(QFrame.Shape.VLine)
-        line.setFrameShadow(QFrame.Shadow.Sunken)
-        bar_layout.addWidget(line)
-
-        # View By (Radio Buttons)
-        bar_layout.addWidget(QLabel("View:"))
-        self.radio_group = QButtonGroup(self)
+        self.tree = QTreeWidget()
+        self.tree.setHeaderHidden(True)
         
-        self.rb_daily = QRadioButton("Daily")
-        self.rb_weekly = QRadioButton("Weekly")
-        self.rb_monthly = QRadioButton("Monthly")
-        self.rb_yearly = QRadioButton("Yearly")
+        # --- POPULATE TREE ---
+        self.add_tree_item("Sales Reports", [
+            "Daily Sales Journal", "Sundry Sales Details", "Customer/Patient Sales", 
+            "Doctor Wise Sales", "Product Wise Sales"
+        ])
         
-        self.rb_daily.setChecked(True)
-
-        self.radio_group.addButton(self.rb_daily)
-        self.radio_group.addButton(self.rb_weekly)
-        self.radio_group.addButton(self.rb_monthly)
-        self.radio_group.addButton(self.rb_yearly)
+        self.add_tree_item("Stock Reports", [
+            "Current Stock Report", "Batch Wise Stock", "Rack Wise Stock", 
+            "Supplier Stock Report", "Slow Moving Products", "Excess Stock (>100)", 
+            "Fast Moving (Non-Stop)"
+        ])
         
-        # Connect signals
-        self.rb_daily.toggled.connect(self.generate_report)
-        self.rb_weekly.toggled.connect(self.generate_report)
-        self.rb_monthly.toggled.connect(self.generate_report)
-        self.rb_yearly.toggled.connect(self.generate_report)
+        self.add_tree_item("Financial Reports", [
+            "Profit & Loss (Approx)", "Balance Sheet (Approx)"
+        ])
+        
+        self.add_tree_item("Visual Analytics", [
+            "Daily Sales Graph", "Monthly Sales Graph"
+        ])
 
-        bar_layout.addWidget(self.rb_daily)
-        bar_layout.addWidget(self.rb_weekly)
-        bar_layout.addWidget(self.rb_monthly)
-        bar_layout.addWidget(self.rb_yearly)
-
-        bar_layout.addStretch()
-        main_layout.addWidget(controls_frame)
+        sidebar_layout.addWidget(self.tree)
+        self.tree.itemSelectionChanged.connect(self.on_report_selected)
+        
+        main_layout.addWidget(sidebar_frame)
 
         # ==========================================
-        # 2. CHART AREA
+        # 2. RIGHT CONTENT AREA
         # ==========================================
-        self.canvas = MplCanvas(self, width=5, height=4, dpi=100)
-        self.canvas.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        main_layout.addWidget(self.canvas, 1)
-
-    def on_report_type_changed(self):
-        """Show/Hide radio buttons based on Report Type"""
-        report_type = self.combo_type.currentText()
+        content_layout = QVBoxLayout()
+        content_layout.setContentsMargins(0, 0, 0, 0)
         
-        if report_type == "Profit & Loss Report":
-            # HIDE Daily and Weekly
-            self.rb_daily.setHidden(True)
-            self.rb_weekly.setHidden(True)
-            self.rb_monthly.setHidden(False)
-            self.rb_yearly.setHidden(False)
-            
-            # If current selection is hidden, switch to Monthly
-            if self.rb_daily.isChecked() or self.rb_weekly.isChecked():
-                self.rb_monthly.setChecked(True)
-        else: 
-            # SHOW ALL
-            self.rb_daily.setHidden(False)
-            self.rb_weekly.setHidden(False)
-            self.rb_monthly.setHidden(False)
-            self.rb_yearly.setHidden(False)
-            
+        # --- A. FILTER BAR ---
+        filter_frame = QFrame()
+        filter_frame.setFixedHeight(60)
+        filter_frame.setStyleSheet(f"background-color: {COLOR_WHITE}; border-bottom: 1px solid #dee2e6;")
+        filter_layout = QHBoxLayout(filter_frame)
+        filter_layout.setContentsMargins(20, 10, 20, 10)
+        filter_layout.setSpacing(15)
+        
+        self.lbl_report_title = QLabel("Select a Report")
+        self.lbl_report_title.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {COLOR_NAVBAR};")
+        filter_layout.addWidget(self.lbl_report_title)
+        
+        filter_layout.addStretch()
+        
+        # Date Filters
+        self.lbl_from = QLabel("From:")
+        self.date_from = QDateEdit(QDate.currentDate().addDays(-30))
+        self.date_from.setCalendarPopup(True)
+        self.date_from.setStyleSheet(self.input_style())
+        self.date_from.dateChanged.connect(self.generate_report)
+        
+        self.lbl_to = QLabel("To:")
+        self.date_to = QDateEdit(QDate.currentDate())
+        self.date_to.setCalendarPopup(True)
+        self.date_to.setStyleSheet(self.input_style())
+        self.date_to.dateChanged.connect(self.generate_report)
+        
+        filter_layout.addWidget(self.lbl_from)
+        filter_layout.addWidget(self.date_from)
+        filter_layout.addWidget(self.lbl_to)
+        filter_layout.addWidget(self.date_to)
+
+        content_layout.addWidget(filter_frame)
+
+        # --- B. VIEW STACK (Table vs Graph) ---
+        self.stack = QStackedWidget()
+        
+        # 1. Table View
+        self.table = QTableWidget()
+        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table.setAlternatingRowColors(True)
+        self.table.verticalHeader().setVisible(False) 
+        self.stack.addWidget(self.table)
+        
+        # 2. Graph View
+        self.canvas = MplCanvas(self, width=5, height=4, dpi=120) # Higher DPI
+        self.stack.addWidget(self.canvas)
+        
+        content_layout.addWidget(self.stack)
+        
+        # Wrap content
+        content_widget = QWidget()
+        content_widget.setLayout(content_layout)
+        main_layout.addWidget(content_widget)
+
+    def add_tree_item(self, parent_name, children):
+        parent = QTreeWidgetItem([parent_name])
+        parent.setFont(0, QFont("Segoe UI", 10, QFont.Weight.Bold))
+        for child_name in children:
+            child = QTreeWidgetItem([child_name])
+            child.setFont(0, QFont("Segoe UI", 10))
+            parent.addChild(child)
+        self.tree.addTopLevelItem(parent)
+
+    def input_style(self):
+        return f"border: 1px solid #ced4da; padding: 5px; border-radius: 4px; background: white; min-width: 100px;"
+
+    def on_report_selected(self):
+        item = self.tree.currentItem()
+        if not item or item.childCount() > 0: return
+
+        report_name = item.text(0)
+        self.lbl_report_title.setText(report_name)
+        
+        # Show/Hide Date Filters
+        is_date_relevant = report_name in [
+            "Daily Sales Journal", "Sundry Sales Details", "Customer/Patient Sales", 
+            "Doctor Wise Sales", "Product Wise Sales", 
+            "Daily Sales Graph", "Monthly Sales Graph", "Profit & Loss (Approx)"
+        ]
+        
+        self.lbl_from.setVisible(is_date_relevant)
+        self.date_from.setVisible(is_date_relevant)
+        self.lbl_to.setVisible(is_date_relevant)
+        self.date_to.setVisible(is_date_relevant)
+        
+        # Switch View
+        if "Graph" in report_name:
+            self.stack.setCurrentWidget(self.canvas)
+        else:
+            self.stack.setCurrentWidget(self.table)
+            self.table.setRowCount(0)
+            self.table.setColumnCount(0)
+
         self.generate_report()
 
-    def generate_report(self, *args):
-        report_type = self.combo_type.currentText()
-        month_idx = self.combo_month.currentIndex() + 1
-        year = self.spin_year.value()
+    def generate_report(self):
+        item = self.tree.currentItem()
+        if not item: return
+        report_name = item.text(0)
         
-        frequency = "Daily"
-        if self.rb_weekly.isChecked(): frequency = "Weekly"
-        if self.rb_monthly.isChecked(): frequency = "Monthly"
-        if self.rb_yearly.isChecked(): frequency = "Yearly"
-
-        self.canvas.axes.clear()
-
+        d_from = self.date_from.date().toString("yyyy-MM-dd")
+        d_to = self.date_to.date().toString("yyyy-MM-dd")
+        
         conn = database.get_connection()
         if not conn: return
         cursor = conn.cursor()
-
+        
         try:
-            if report_type == "Sales Report":
-                self.plot_sales_report(cursor, frequency, month_idx, year)
-            else:
-                self.plot_profit_loss(cursor, frequency, year)
+            # === SALES REPORTS ===
+            if report_name == "Daily Sales Journal":
+                query = """
+                    SELECT bill_date, Bill_id, patient_name, doctor_name, payment_method, total_sum 
+                    FROM Bill WHERE date(bill_date) BETWEEN ? AND ? ORDER BY bill_date DESC
+                """
+                self.run_table_query(cursor, query, (d_from, d_to), 
+                                     ["Date", "Bill #", "Patient", "Doctor", "Pay Mode", "Amount"])
+
+            elif report_name == "Sundry Sales Details":
+                query = """
+                    SELECT b.bill_date, b.Bill_id, m.med_name, bi.quantity, bi.unit_price, bi.total_price 
+                    FROM Bill_Item bi 
+                    JOIN Bill b ON bi.Bill_id = b.Bill_id
+                    JOIN Medicine_Details m ON bi.Med_id = m.med_id
+                    WHERE date(b.bill_date) BETWEEN ? AND ?
+                """
+                self.run_table_query(cursor, query, (d_from, d_to), 
+                                     ["Date", "Bill #", "Item", "Qty", "Rate", "Total"])
+
+            elif report_name == "Customer/Patient Sales":
+                query = """
+                    SELECT patient_name, COUNT(Bill_id), SUM(total_sum) 
+                    FROM Bill WHERE date(bill_date) BETWEEN ? AND ? 
+                    GROUP BY patient_name ORDER BY SUM(total_sum) DESC
+                """
+                self.run_table_query(cursor, query, (d_from, d_to), ["Patient Name", "Total Bills", "Total Spent"])
+
+            elif report_name == "Doctor Wise Sales":
+                query = """
+                    SELECT doctor_name, COUNT(Bill_id), SUM(total_sum) 
+                    FROM Bill WHERE date(bill_date) BETWEEN ? AND ? 
+                    GROUP BY doctor_name ORDER BY SUM(total_sum) DESC
+                """
+                self.run_table_query(cursor, query, (d_from, d_to), ["Doctor Name", "Prescriptions", "Revenue Generated"])
+
+            elif report_name == "Product Wise Sales":
+                query = """
+                    SELECT m.med_name, SUM(bi.quantity), SUM(bi.total_price) 
+                    FROM Bill_Item bi
+                    JOIN Bill b ON bi.Bill_id = b.Bill_id
+                    JOIN Medicine_Details m ON bi.Med_id = m.med_id
+                    WHERE date(b.bill_date) BETWEEN ? AND ?
+                    GROUP BY m.med_name ORDER BY SUM(bi.quantity) DESC
+                """
+                self.run_table_query(cursor, query, (d_from, d_to), ["Medicine Name", "Qty Sold", "Revenue"])
+
+            # === STOCK REPORTS ===
+            elif report_name == "Current Stock Report":
+                # Converts total units to "X Strips + Y Tabs" for display
+                query = """
+                    SELECT d.med_name, d.type, d.rack_no, 
+                           CASE WHEN d.tabs_per_strip > 1 THEN 
+                               (CAST(IFNULL(SUM(s.quantity),0) AS INTEGER) / d.tabs_per_strip) || 's + ' || (CAST(IFNULL(SUM(s.quantity),0) AS INTEGER) % d.tabs_per_strip) || 't'
+                           ELSE 
+                               IFNULL(SUM(s.quantity), 0) || ' Units'
+                           END
+                    FROM Medicine_Details d 
+                    LEFT JOIN Medicine_Stock s ON d.med_id = s.med_id 
+                    GROUP BY d.med_id ORDER BY d.med_name
+                """
+                self.run_table_query(cursor, query, None, ["Medicine", "Type", "Rack", "Total Qty"])
+
+            elif report_name == "Batch Wise Stock":
+                # Shows raw quantity because batch wise might be easier to read as total tabs for auditing
+                query = """
+                    SELECT d.med_name, s.batch_no, s.exp_date, s.quantity, s.purchase_rate, s.sale_rate 
+                    FROM Medicine_Stock s 
+                    JOIN Medicine_Details d ON s.med_id = d.med_id 
+                    ORDER BY s.exp_date ASC
+                """
+                self.run_table_query(cursor, query, None, ["Medicine", "Batch", "Expiry", "Total Tabs", "Buy Rate", "Sell Rate"])
+
+            elif report_name == "Rack Wise Stock":
+                query = """
+                    SELECT d.rack_no, d.med_name, 
+                           CASE WHEN d.tabs_per_strip > 1 THEN 
+                               (CAST(IFNULL(SUM(s.quantity),0) AS INTEGER) / d.tabs_per_strip) || 's + ' || (CAST(IFNULL(SUM(s.quantity),0) AS INTEGER) % d.tabs_per_strip) || 't'
+                           ELSE 
+                               IFNULL(SUM(s.quantity), 0) || ' Units'
+                           END
+                    FROM Medicine_Details d 
+                    LEFT JOIN Medicine_Stock s ON d.med_id = s.med_id 
+                    WHERE d.rack_no IS NOT NULL AND d.rack_no != '' 
+                    GROUP BY d.med_id ORDER BY d.rack_no
+                """
+                self.run_table_query(cursor, query, None, ["Rack No", "Medicine", "Qty"])
+
+            elif report_name == "Supplier Stock Report":
+                query = """
+                    SELECT sup.Sup_name, m.med_name, SUM(pi.quantity) as purchased
+                    FROM Purchase_Invoice_Item pi
+                    JOIN Purchase_Invoice p ON pi.invoice_id = p.invoice_id
+                    JOIN Supplier sup ON p.supp_id = sup.Supp_id
+                    JOIN Medicine_Details m ON pi.Med_id = m.med_id
+                    GROUP BY sup.Sup_name, m.med_name
+                """
+                self.run_table_query(cursor, query, None, ["Supplier", "Medicine", "Total Purchased Qty"])
+
+            elif report_name == "Slow Moving Products":
+                query = """
+                    SELECT med_name, type, manufacturer FROM Medicine_Details 
+                    WHERE med_id NOT IN (
+                        SELECT DISTINCT Med_id FROM Bill_Item 
+                        JOIN Bill ON Bill_Item.Bill_id = Bill.Bill_id 
+                        WHERE date(Bill.bill_date) >= date('now', '-30 days')
+                    )
+                """
+                self.run_table_query(cursor, query, None, ["Medicine", "Type", "Manufacturer"])
+
+            elif report_name == "Excess Stock (>100)":
+                # Adjusted to show Strips/Tabs logic
+                query = """
+                    SELECT d.med_name, 
+                           CASE WHEN d.tabs_per_strip > 1 THEN 
+                               (CAST(SUM(s.quantity) AS INTEGER) / d.tabs_per_strip) || 's + ' || (CAST(SUM(s.quantity) AS INTEGER) % d.tabs_per_strip) || 't'
+                           ELSE 
+                               SUM(s.quantity) || ' Units'
+                           END
+                    FROM Medicine_Stock s 
+                    JOIN Medicine_Details d ON s.med_id = d.med_id 
+                    GROUP BY d.med_id HAVING SUM(s.quantity) > 100
+                """
+                self.run_table_query(cursor, query, None, ["Medicine", "Total Quantity"])
+
+            elif report_name == "Fast Moving (Non-Stop)":
+                 query = """
+                    SELECT m.med_name, COUNT(bi.item_id) as freq 
+                    FROM Bill_Item bi 
+                    JOIN Medicine_Details m ON bi.Med_id = m.med_id 
+                    GROUP BY m.med_id ORDER BY freq DESC LIMIT 50
+                """
+                 self.run_table_query(cursor, query, None, ["Medicine", "Sales Frequency"])
+
+            # === FINANCIALS ===
+            elif report_name == "Profit & Loss (Approx)":
+                cursor.execute("SELECT SUM(total_sum) FROM Bill WHERE date(bill_date) BETWEEN ? AND ?", (d_from, d_to))
+                total_sales = cursor.fetchone()[0] or 0
+                
+                cursor.execute("""
+                    SELECT SUM(bi.quantity * (
+                        SELECT AVG(s.purchase_rate) 
+                        FROM Medicine_Stock s 
+                        WHERE s.med_id = bi.Med_id
+                    )) 
+                    FROM Bill_Item bi 
+                    JOIN Bill b ON bi.Bill_id = b.Bill_id
+                    WHERE date(b.bill_date) BETWEEN ? AND ?
+                """, (d_from, d_to))
+                cogs = cursor.fetchone()[0] or 0
+                
+                cursor.execute("SELECT SUM(amount) FROM Expenses WHERE date(expense_date) BETWEEN ? AND ?", (d_from, d_to))
+                expenses = cursor.fetchone()[0] or 0
+                
+                gross = total_sales - cogs
+                net = gross - expenses
+                
+                data = [
+                    ["Revenue", "Total Sales", f"₹{total_sales:.2f}"],
+                    ["Cost", "Cost of Goods Sold", f"(₹{cogs:.2f})"],
+                    ["Result", "Gross Profit", f"₹{gross:.2f}"],
+                    ["Expense", "Operational Expenses", f"(₹{expenses:.2f})"],
+                    ["Result", "NET PROFIT", f"₹{net:.2f}"]
+                ]
+                self.populate_table(["Category", "Description", "Amount"], data)
+
+            elif report_name == "Balance Sheet (Approx)":
+                cursor.execute("SELECT SUM(quantity * purchase_rate) FROM Medicine_Stock")
+                stock_val = cursor.fetchone()[0] or 0
+                
+                cursor.execute("SELECT SUM(balance) FROM Supplier")
+                supp_dues = cursor.fetchone()[0] or 0
+                
+                cursor.execute("SELECT SUM(balance) FROM Customer")
+                cust_dues = cursor.fetchone()[0] or 0
+                
+                data = [
+                    ["Asset", "Closing Stock Value", f"₹{stock_val:.2f}"],
+                    ["Asset", "Customer Receivables", f"₹{cust_dues:.2f}"],
+                    ["Liability", "Supplier Payables", f"₹{supp_dues:.2f}"],
+                    ["Equity", "Estimated Equity", f"₹{stock_val + cust_dues - supp_dues:.2f}"]
+                ]
+                self.populate_table(["Type", "Account", "Amount"], data)
+
+            # === GRAPHS ===
+            elif report_name == "Daily Sales Graph":
+                self.plot_daily_sales(cursor, d_from, d_to)
             
-            self.canvas.draw()
-            
+            elif report_name == "Monthly Sales Graph":
+                self.plot_monthly_sales(cursor, d_from[:4])
+
         except Exception as e:
-            print(f"Plot Error: {e}")
-            self.canvas.axes.text(0.5, 0.5, f"Error: {str(e)}", 
-                                  ha='center', va='center', transform=self.canvas.axes.transAxes)
+            QMessageBox.critical(self, "Report Error", str(e))
         finally:
             conn.close()
 
-    # ============================================
-    # SALES REPORT LOGIC
-    # ============================================
-    def plot_sales_report(self, cursor, frequency, month, year):
-        data_x = []
-        data_y = []
-        title = ""
-        xlabel = ""
+    def run_table_query(self, cursor, query, params, headers):
+        if params:
+            cursor.execute(query, params)
+        else:
+            cursor.execute(query)
+        rows = cursor.fetchall()
+        self.populate_table(headers, rows)
+
+    def populate_table(self, headers, rows):
+        self.table.setColumnCount(len(headers))
+        self.table.setHorizontalHeaderLabels(headers)
+        self.table.setRowCount(0)
         
-        if frequency == "Daily":
-            cursor.execute("""
-                SELECT strftime('%d', bill_date), SUM(total_sum)
-                FROM Bill WHERE strftime('%Y', bill_date) = ? AND strftime('%m', bill_date) = ?
-                GROUP BY strftime('%d', bill_date)
-            """, (str(year), str(month).zfill(2)))
-            rows = cursor.fetchall()
-            data_dict = {str(int(r[0])): r[1] for r in rows}
-            
-            for i in range(1, 32):
-                data_x.append(str(i))
-                data_y.append(data_dict.get(str(i), 0))
-            
-            title = f"Daily Sales - {self.get_month_names()[month-1]} {year}"
-            xlabel = "Day of Month"
-
-        elif frequency == "Weekly":
-            cursor.execute("""
-                SELECT strftime('%d', bill_date), total_sum
-                FROM Bill WHERE strftime('%Y', bill_date) = ? AND strftime('%m', bill_date) = ?
-            """, (str(year), str(month).zfill(2)))
-            rows = cursor.fetchall()
-            
-            weeks = [0, 0, 0, 0, 0]
-            for r in rows:
-                day = int(r[0])
-                week_idx = (day - 1) // 7
-                if week_idx < 5:
-                    weeks[week_idx] += r[1]
-            
-            data_x = ["Week 1", "Week 2", "Week 3", "Week 4", "Week 5"]
-            data_y = weeks
-            title = f"Weekly Sales - {self.get_month_names()[month-1]} {year}"
-            xlabel = "Week"
-
-        elif frequency == "Monthly":
-            cursor.execute("""
-                SELECT strftime('%m', bill_date), SUM(total_sum)
-                FROM Bill WHERE strftime('%Y', bill_date) = ?
-                GROUP BY strftime('%m', bill_date)
-            """, (str(year),))
-            rows = cursor.fetchall()
-            data_dict = {str(int(r[0])): r[1] for r in rows} 
-            
-            month_names = self.get_month_names()
-            for i in range(1, 13):
-                data_x.append(month_names[i-1][:3]) 
-                data_y.append(data_dict.get(str(i), 0))
+        for i, row in enumerate(rows):
+            self.table.insertRow(i)
+            for j, val in enumerate(row):
+                item = QTableWidgetItem(str(val) if val is not None else "")
                 
-            title = f"Monthly Sales Trend - {year}"
-            xlabel = "Month"
-
-        elif frequency == "Yearly":
-            cursor.execute("""
-                SELECT strftime('%Y', bill_date), SUM(total_sum)
-                FROM Bill
-                GROUP BY strftime('%Y', bill_date)
-                ORDER BY strftime('%Y', bill_date) ASC
-            """)
-            rows = cursor.fetchall()
-            for r in rows:
-                data_x.append(str(r[0]))
-                data_y.append(r[1])
-            
-            title = "Yearly Sales Comparison"
-            xlabel = "Year"
-
-        # Plot Data
-        self.canvas.axes.plot(data_x, data_y, marker='o', linestyle='-', color='#0d47a1', linewidth=2)
-        self.canvas.axes.fill_between(data_x, data_y, color='#0d47a1', alpha=0.1) 
+                # Align numbers right, text left
+                if str(val).replace('.', '', 1).isdigit() or "₹" in str(val):
+                    item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                else:
+                    item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+                
+                self.table.setItem(i, j, item)
         
-        if data_y:
-            max_val = max(data_y)
-            self.canvas.axes.set_ylim(0, max_val * 1.15) 
+        # SMART COLUMN RESIZING
+        header = self.table.horizontalHeader()
+        
+        has_stretch = False
+        for i, h_text in enumerate(headers):
+            h_text_lower = h_text.lower()
+            # If column is descriptive, Stretch it
+            if any(x in h_text_lower for x in ['name', 'item', 'description', 'patient', 'doctor', 'medicine']):
+                header.setSectionResizeMode(i, QHeaderView.ResizeMode.Stretch)
+                has_stretch = True
+            else:
+                header.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
+        
+        # Ensure at least one column stretches if none found
+        if not has_stretch and self.table.columnCount() > 0:
+            header.setSectionResizeMode(self.table.columnCount()-1, QHeaderView.ResizeMode.Stretch)
 
-        self.canvas.axes.set_title(title, fontsize=12, fontweight='bold')
+    # --- PLOTTING FUNCTIONS ---
+    def plot_daily_sales(self, cursor, d_from, d_to):
+        self.canvas.axes.clear()
+        cursor.execute("""
+            SELECT date(bill_date), SUM(total_sum) FROM Bill 
+            WHERE date(bill_date) BETWEEN ? AND ? 
+            GROUP BY date(bill_date) ORDER BY date(bill_date)
+        """, (d_from, d_to))
+        rows = cursor.fetchall()
+        
+        dates = [r[0] for r in rows]
+        values = [r[1] for r in rows]
+        
+        self.canvas.axes.plot(dates, values, marker='o', linestyle='-', color='#0d47a1', linewidth=2)
+        self.canvas.axes.set_title("Daily Sales Trend", fontsize=12, fontweight='bold')
         self.canvas.axes.set_ylabel("Sales (₹)")
-        self.canvas.axes.set_xlabel(xlabel)
-        self.canvas.axes.grid(True, linestyle='--', alpha=0.6)
-
-    # ============================================
-    # PROFIT & LOSS REPORT LOGIC
-    # ============================================
-    def plot_profit_loss(self, cursor, frequency, year):
-        labels = []
-        purchase_data = []
-        sales_data = []
-        net_profit_data = []
-        title = ""
-        xlabel = ""
-
-        base_query = """
-            SELECT {}, 
-                   SUM(bi.quantity * m.Purchase_Price) as total_purchase,
-                   SUM(bi.quantity * m.Sale_Price) as total_sales
-            FROM Bill_Item bi
-            JOIN Bill b ON bi.Bill_id = b.Bill_id
-            JOIN Medicine m ON bi.Med_id = m.Med_id
-            WHERE {}
-            GROUP BY {}
-            ORDER BY {} ASC
-        """
-
-        if frequency == "Monthly":
-            select_part = "strftime('%m', b.bill_date)"
-            where_part = "strftime('%Y', b.bill_date) = ?"
-            group_part = "strftime('%m', b.bill_date)"
+        self.canvas.axes.tick_params(axis='x', rotation=30)
+        self.canvas.axes.grid(True, linestyle='--', alpha=0.5)
+        
+        # Add values on top of points
+        for x, y in zip(dates, values):
+            self.canvas.axes.text(x, y, f"{int(y)}", ha='center', va='bottom', fontsize=9)
             
-            cursor.execute(base_query.format(select_part, where_part, group_part, group_part), (str(year),))
-            rows = cursor.fetchall()
-            
-            p_dict = {int(r[0]): r[1] for r in rows}
-            s_dict = {int(r[0]): r[2] for r in rows}
-            
-            month_names = self.get_month_names()
-            for i in range(1, 13):
-                labels.append(month_names[i-1][:3])
-                p_val = p_dict.get(i, 0) or 0
-                s_val = s_dict.get(i, 0) or 0
-                purchase_data.append(p_val)
-                sales_data.append(s_val)
-                net_profit_data.append(s_val - p_val) 
-                
-            title = f"Profit & Loss Analysis - {year}"
-            xlabel = "Month"
+        self.canvas.figure.tight_layout()
+        self.canvas.draw()
 
-        elif frequency == "Yearly":
-            select_part = "strftime('%Y', b.bill_date)"
-            where_part = "1=1" 
-            group_part = "strftime('%Y', b.bill_date)"
-            
-            cursor.execute(base_query.format(select_part, where_part, group_part, group_part))
-            rows = cursor.fetchall()
-            
-            for r in rows:
-                labels.append(str(r[0]))
-                p_val = r[1] or 0
-                s_val = r[2] or 0
-                purchase_data.append(p_val)
-                sales_data.append(s_val)
-                net_profit_data.append(s_val - p_val)
-                
-            title = "Annual Profit & Loss Comparison"
-            xlabel = "Year"
-
-        # --- PLOTTING ---
-        if not labels:
-            self.canvas.axes.text(0.5, 0.5, "No Data Available", ha='center', fontsize=12)
-            return
-
-        x = np.arange(len(labels))
-        width = 0.35 
-
-        # 1. Bar Chart
-        rects1 = self.canvas.axes.bar(x - width/2, purchase_data, width, label='Purchase Cost', color='#dc3545', alpha=0.8)
-        rects2 = self.canvas.axes.bar(x + width/2, sales_data, width, label='Sales Revenue', color='#198754', alpha=0.8)
-
-        # 2. Line Chart
-        self.canvas.axes.plot(x, net_profit_data, color='blue', marker='o', linestyle='--', linewidth=2, label='Net Profit')
-
-        # 3. Add Values
-        def autolabel(rects):
-            for rect in rects:
-                height = rect.get_height()
-                if height > 0:
-                    self.canvas.axes.annotate(f'{int(height)}',
-                                xy=(rect.get_x() + rect.get_width() / 2, height),
-                                xytext=(0, 5),  
-                                textcoords="offset points",
-                                ha='center', va='bottom', fontsize=9, rotation=90)
-
-        autolabel(rects1)
-        autolabel(rects2)
-
-        all_values = purchase_data + sales_data
-        if all_values:
-            max_height = max(all_values)
-            self.canvas.axes.set_ylim(0, max_height * 1.25)
-
-        # 4. Total Profit Summary Box
-        total_profit = sum(net_profit_data)
-        self.canvas.axes.text(0.02, 0.95, f"Total Profit: ₹{total_profit:,.2f}", 
-                              transform=self.canvas.axes.transAxes, 
-                              fontsize=12, fontweight='bold', 
-                              bbox=dict(boxstyle="round,pad=0.4", fc="white", ec="black", alpha=0.8))
-
-        self.canvas.axes.set_title(title, fontsize=14, fontweight='bold')
-        self.canvas.axes.set_ylabel('Amount (₹)')
-        self.canvas.axes.set_xlabel(xlabel)
-        self.canvas.axes.set_xticks(x)
-        self.canvas.axes.set_xticklabels(labels)
-        self.canvas.axes.legend(loc='upper right')
-        self.canvas.axes.grid(axis='y', linestyle='--', alpha=0.4)
-
-    def get_month_names(self):
-        return ["January", "February", "March", "April", "May", "June", 
-                "July", "August", "September", "October", "November", "December"]
+    def plot_monthly_sales(self, cursor, year):
+        self.canvas.axes.clear()
+        cursor.execute("""
+            SELECT strftime('%m', bill_date), SUM(total_sum) 
+            FROM Bill WHERE strftime('%Y', bill_date) = ? 
+            GROUP BY strftime('%m', bill_date)
+        """, (year,))
+        rows = cursor.fetchall()
+        
+        data = {int(r[0]): r[1] for r in rows}
+        months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        values = [data.get(i+1, 0) for i in range(12)]
+        
+        bars = self.canvas.axes.bar(months, values, color='#198754', alpha=0.8)
+        self.canvas.axes.set_title(f"Monthly Sales - {year}", fontsize=12, fontweight='bold')
+        self.canvas.axes.set_ylabel("Sales (₹)")
+        self.canvas.axes.grid(axis='y', linestyle='--', alpha=0.5)
+        
+        # Add values on bars
+        for bar in bars:
+            height = bar.get_height()
+            if height > 0:
+                self.canvas.axes.text(bar.get_x() + bar.get_width()/2, height, f"{int(height)}", 
+                                      ha='center', va='bottom', fontsize=9)
+                                      
+        self.canvas.figure.tight_layout()
+        self.canvas.draw()
 
 class MplCanvas(FigureCanvas):
     def __init__(self, parent=None, width=5, height=4, dpi=100):
         fig = Figure(figsize=(width, height), dpi=dpi)
         self.axes = fig.add_subplot(111)
-        fig.subplots_adjust(left=0.08, right=0.95, top=0.92, bottom=0.15)
         super(MplCanvas, self).__init__(fig)
 
 if __name__ == "__main__":
-    app = QApplication(sys.argv)
+    app = sys.modules['__main__'].QApplication(sys.argv)
     window = ReportsInterface()
     window.show() 
     sys.exit(app.exec())

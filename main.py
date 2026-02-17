@@ -20,7 +20,8 @@ from reports import ReportsInterface
 from stock_management import StockInterface
 from orders import OrdersInterface
 from purchase_entry import PurchaseEntryInterface 
-from partner_management import PartnerManagementInterface # Ensure this is imported
+from partner_management import PartnerManagementInterface
+from accounts import AccountsInterface # <--- NEW IMPORT
 
 # ---------- COLORS ----------
 COLOR_NAVBAR = "#0d47a1"   # Deep Blue
@@ -246,6 +247,7 @@ class MainWindow(QWidget):
         add_header("Records")
         add_nav_btn("Sales", "Sales History")
         add_nav_btn("Reports", "Reports & Analytics")
+        add_nav_btn("Accounts", "Expenses & Accounts") # <--- ADDED BUTTON
 
         # 4. ADMIN
         add_header("Admin")
@@ -255,7 +257,7 @@ class MainWindow(QWidget):
         layout.addStretch()
         
         # Version Info
-        ver = QLabel("v2.1.0")
+        ver = QLabel("v2.2.0")
         ver.setAlignment(Qt.AlignmentFlag.AlignCenter)
         ver.setStyleSheet("color: #64b5f6; font-size: 11px;")
         layout.addWidget(ver)
@@ -321,6 +323,7 @@ class MainWindow(QWidget):
         self.pharma_page = PharmacyDetailsInterface()
         self.purchase_page = PurchaseEntryInterface() 
         self.partner_page = PartnerManagementInterface()
+        self.accounts_page = AccountsInterface() # <--- INSTANTIATE ACCOUNTS
 
         # Connect Signals
         self.sales_page.edit_bill_signal.connect(self.handle_edit_request)
@@ -339,7 +342,8 @@ class MainWindow(QWidget):
             "Orders": self.orders_page,
             "Pharmacy": self.pharma_page,
             "Purchase Entry": self.purchase_page,
-            "Partners": self.partner_page # <--- THIS LINE WAS MISSING
+            "Partners": self.partner_page,
+            "Accounts": self.accounts_page # <--- ADD TO MAP
         }
 
         # Add to Stack
@@ -378,15 +382,20 @@ class MainWindow(QWidget):
             self.notify_manager.reposition()
         super().resizeEvent(event)
 
-    # --- NOTIFICATIONS (Low Stock / Expiry) ---
+ # --- NOTIFICATIONS ---
     def perform_calculations_and_notify(self):
         conn = database.get_connection()
         if not conn: return
         cursor = conn.cursor()
 
         try:
-            # 1. Low Stock
-            cursor.execute("SELECT Med_name FROM Medicine WHERE Quantity < 10")
+            # 1. Low Stock Check (Join Details with Stock)
+            cursor.execute("""
+                SELECT d.med_name 
+                FROM Medicine_Details d
+                JOIN Medicine_Stock s ON d.med_id = s.med_id
+                WHERE s.quantity < 10
+            """)
             low_rows = cursor.fetchall()
             if low_rows:
                 count = len(low_rows)
@@ -394,32 +403,43 @@ class MainWindow(QWidget):
                 msg = f"{name} and {count-1} others are running low." if count > 1 else f"{name} is running low."
                 self.notify_manager.show_toast("Stock Alert", msg, "warning")
 
-            # 2. Expiry (Next 30 days)
+            # 2. Expiry Alert (Handling MM/YY format)
             today = datetime.datetime.now()
-            threshold = today + timedelta(days=30) # Warn 30 days in advance
-            
-            cursor.execute("SELECT Med_name, EXP_Date FROM Medicine")
-            all_meds = cursor.fetchall()
+            today_month = today.month
+            today_year = int(today.strftime("%y")) # e.g., 24
+
+            cursor.execute("""
+                SELECT d.med_name, s.exp_date 
+                FROM Medicine_Details d
+                JOIN Medicine_Stock s ON d.med_id = s.med_id
+            """)
+            all_stock = cursor.fetchall()
             
             exp_count = 0
             exp_name = ""
-            
-            for name, date_str in all_meds:
-                if not date_str: continue
+
+            for name, exp_str in all_stock:
+                if not exp_str or "/" not in exp_str: continue
+                
                 try:
-                    # Handle both YYYY-MM-DD and DD-MM-YYYY
-                    if "-" in date_str:
-                        parts = date_str.split("-")
-                        if len(parts[0]) == 4: d = datetime.datetime.strptime(date_str, "%Y-%m-%d")
-                        else: d = datetime.datetime.strptime(date_str, "%d-%m-%Y")
-                        
-                        if today <= d <= threshold:
-                            exp_count += 1
-                            if not exp_name: exp_name = name
+                    m_str, y_str = exp_str.split("/")
+                    exp_month = int(m_str)
+                    exp_year = int(y_str)
+
+                    if exp_year < today_year:
+                        is_near_expiry = True
+                    elif exp_year == today_year and exp_month <= (today_month + 1):
+                        is_near_expiry = True
+                    else:
+                        is_near_expiry = False
+
+                    if is_near_expiry:
+                        exp_count += 1
+                        if not exp_name: exp_name = name
                 except: continue
 
             if exp_count > 0:
-                msg = f"{exp_name} and {exp_count-1} others expiring soon." if exp_count > 1 else f"{exp_name} is expiring soon."
+                msg = f"{exp_name} and {exp_count-1} others expiring soon (or expired)." if exp_count > 1 else f"{exp_name} is expiring soon."
                 self.notify_manager.show_toast("Expiry Alert", msg, "error")
 
         except Exception as e:
