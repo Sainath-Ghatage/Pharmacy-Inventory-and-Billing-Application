@@ -1,12 +1,13 @@
 import sys
 import datetime
 import sqlite3
+import pandas as pd 
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QTableWidget, QTableWidgetItem, QHeaderView,
     QComboBox, QDateEdit, QMessageBox, QDialog, QFormLayout,
     QFrame, QAbstractItemView, QCompleter, QSpinBox, QDoubleSpinBox,
-    QGridLayout, QTabWidget, QSplitter
+    QGridLayout, QTabWidget, QSplitter, QFileDialog, QSizePolicy, QSpacerItem
 )
 from PyQt6.QtCore import Qt, QDate
 from PyQt6.QtGui import QColor, QFont, QIcon
@@ -21,7 +22,7 @@ COLOR_TEXT = "#212529"
 COLOR_NAVBAR = "#0d47a1"        
 COLOR_GREEN = "#198754"         
 COLOR_DELETE = "#dc3545"        
-COLOR_ACCENT_LIGHT = "#e7f1ff"     
+COLOR_ACCENT_LIGHT = "#e7f1ff"    
 
 # --- STYLESHEET ---
 STYLE_SHEET = f"""
@@ -31,22 +32,18 @@ STYLE_SHEET = f"""
         font-family: 'Segoe UI', Arial, sans-serif;
         font-size: 13px;
     }}
-    
-    /* Inputs */
     QLineEdit, QSpinBox, QDoubleSpinBox, QDateEdit, QComboBox {{
         background-color: {COLOR_PANEL};
         color: {COLOR_TEXT};
         border: 1px solid {COLOR_BORDER};
         border-radius: 6px;
-        padding: 8px 10px;
+        padding: 6px 10px;
         font-size: 14px;
         min-height: 25px;
     }}
     QLineEdit:focus, QSpinBox:focus, QComboBox:focus {{
         border: 2px solid {COLOR_NAVBAR};
     }}
-
-    /* Table */
     QTableWidget {{
         background-color: {COLOR_PANEL};
         color: {COLOR_TEXT};
@@ -55,9 +52,7 @@ STYLE_SHEET = f"""
         border-radius: 6px;
         outline: none;
     }}
-    QTableWidget::item {{
-        padding-left: 5px;
-    }}
+    QTableWidget::item {{ padding-left: 5px; }}
     QTableWidget::item:selected {{
         background-color: {COLOR_ACCENT_LIGHT};
         color: {COLOR_NAVBAR};
@@ -73,8 +68,6 @@ STYLE_SHEET = f"""
         font-weight: bold;
         font-size: 13px;
     }}
-
-    /* Buttons */
     QPushButton {{
         background-color: {COLOR_PANEL};
         border: 1px solid {COLOR_BORDER};
@@ -87,11 +80,60 @@ STYLE_SHEET = f"""
     QPushButton:hover {{ background-color: #e2e6ea; }}
 """
 
+# --- POPUP DIALOG FOR ORDER SELECTION ---
+class OrderSelectionDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Select Purchase Order")
+        self.resize(600, 400)
+        self.selected_po_id = None
+        
+        layout = QVBoxLayout(self)
+        self.table = QTableWidget()
+        self.table.setColumnCount(4)
+        self.table.setHorizontalHeaderLabels(["PO ID", "Supplier", "Date", "Status"])
+        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table.doubleClicked.connect(self.select_and_close)
+        
+        layout.addWidget(QLabel("Double click an order to load items:"))
+        layout.addWidget(self.table)
+        
+        self.load_orders()
+        
+    def load_orders(self):
+        conn = database.get_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT po.po_id, s.Sup_name, po.order_date, po.status 
+            FROM Purchase_order po
+            JOIN Supplier s ON po.supp_id = s.Supp_id
+            WHERE po.status IN ('Created', 'Sent', 'Updated')
+            ORDER BY po.po_id DESC
+        """)
+        rows = cur.fetchall()
+        conn.close()
+        
+        self.table.setRowCount(len(rows))
+        for i, row in enumerate(rows):
+            self.table.setItem(i, 0, QTableWidgetItem(str(row[0])))
+            self.table.setItem(i, 1, QTableWidgetItem(row[1]))
+            self.table.setItem(i, 2, QTableWidgetItem(row[2]))
+            self.table.setItem(i, 3, QTableWidgetItem(row[3]))
+            
+    def select_and_close(self):
+        row = self.table.currentRow()
+        if row >= 0:
+            self.selected_po_id = self.table.item(row, 0).text()
+            self.accept()
+
 class PurchaseEntryInterface(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Purchase Entry")
         self.setStyleSheet(STYLE_SHEET)
+        self.setMinimumSize(1000, 700)
         
         self.med_names = [] 
         self.load_medicine_names()
@@ -110,34 +152,16 @@ class PurchaseEntryInterface(QWidget):
 
     def init_ui(self):
         main_layout = QVBoxLayout(self)
-        main_layout.setSpacing(15)
-        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setSpacing(10)
+        main_layout.setContentsMargins(15, 15, 15, 15)
 
         # Title
         lbl_title = QLabel("Purchase Management")
-        lbl_title.setStyleSheet(f"font-size: 26px; font-weight: 700; color: {COLOR_NAVBAR};")
+        lbl_title.setStyleSheet(f"font-size: 24px; font-weight: 700; color: {COLOR_NAVBAR};")
         main_layout.addWidget(lbl_title)
 
         # Tabs
         self.tabs = QTabWidget()
-        self.tabs.setStyleSheet(f"""
-            QTabWidget::pane {{ border: 1px solid {COLOR_BORDER}; background: {COLOR_PANEL}; border-radius: 6px; }}
-            QTabBar::tab {{
-                background: #e9ecef;
-                color: #495057;
-                padding: 12px 25px;
-                margin-right: 4px;
-                border-top-left-radius: 6px;
-                border-top-right-radius: 6px;
-                font-weight: 600;
-            }}
-            QTabBar::tab:selected {{
-                background: {COLOR_PANEL};
-                color: {COLOR_NAVBAR};
-                border-top: 3px solid {COLOR_NAVBAR};
-            }}
-        """)
-        
         self.tab_entry = QWidget()
         self.tab_history = QWidget()
         
@@ -151,156 +175,178 @@ class PurchaseEntryInterface(QWidget):
         main_layout.addWidget(self.tabs)
 
     # -----------------------------------------------------------
-    # TAB 1: NEW ENTRY
+    # TAB 1: NEW ENTRY (FIXED LAYOUT)
     # -----------------------------------------------------------
     def create_entry_tab(self):
         layout = QVBoxLayout(self.tab_entry)
-        layout.setSpacing(20)
-        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(15)
+        layout.setContentsMargins(15, 15, 15, 15)
 
-        # 1. HEADER INPUTS (Styled Card)
+        # 1. HEADER INPUTS (Fixed Alignment)
         input_container = QFrame()
-        input_container.setStyleSheet(f"""
-            QFrame {{
-                background-color: {COLOR_PANEL}; 
-                border: 1px solid {COLOR_BORDER}; 
-                border-radius: 8px;
-            }}
-        """)
-        grid_layout = QGridLayout(input_container)
-        grid_layout.setContentsMargins(20, 20, 20, 20)
-        grid_layout.setSpacing(20)
+        input_container.setStyleSheet(f"background-color: {COLOR_PANEL}; border: 1px solid {COLOR_BORDER}; border-radius: 8px;")
+        
+        # Use QHBoxLayout instead of Grid for better horizontal control
+        header_layout = QHBoxLayout(input_container)
+        header_layout.setContentsMargins(15, 15, 15, 15)
+        header_layout.setSpacing(15)
 
-        def add_field(label_text, widget, row, col, colspan=1):
+        def create_field_box(label_text, widget):
             lbl = QLabel(label_text)
-            lbl.setStyleSheet("font-size: 12px; font-weight: bold; color: #6c757d; text-transform: uppercase;")
+            lbl.setStyleSheet("font-size: 11px; font-weight: bold; color: #6c757d; text-transform: uppercase;")
             container = QWidget()
             vbox = QVBoxLayout(container)
             vbox.setContentsMargins(0,0,0,0)
-            vbox.setSpacing(5)
+            vbox.setSpacing(2)
             vbox.addWidget(lbl)
             vbox.addWidget(widget)
-            grid_layout.addWidget(container, row, col, 1, colspan)
+            return container
 
         self.inp_inv_no = QLineEdit()
         self.inp_inv_no.setPlaceholderText("e.g. INV-2026-001")
-        add_field("Invoice No *", self.inp_inv_no, 0, 0)
-
+        
         self.cmb_supplier = QComboBox()
         self.cmb_supplier.setEditable(True)
-        add_field("Supplier *", self.cmb_supplier, 0, 1)
-
+        
         self.date_inv = QDateEdit(QDate.currentDate())
         self.date_inv.setCalendarPopup(True)
-        add_field("Invoice Date *", self.date_inv, 0, 2)
+
+        # Add fields with Stretch factors to balance width
+        # Invoice No: 1, Supplier: 2 (More space), Date: 1
+        header_layout.addWidget(create_field_box("Invoice No *", self.inp_inv_no), 1)
+        header_layout.addWidget(create_field_box("Supplier *", self.cmb_supplier), 2)
+        header_layout.addWidget(create_field_box("Invoice Date *", self.date_inv), 1)
 
         layout.addWidget(input_container)
 
-        # 2. TABLE
+        # 2. IMPORT TOOLBAR
+        tool_bar = QHBoxLayout()
+        
+        btn_import_file = QPushButton("Import CSV/Excel")
+        btn_import_file.clicked.connect(self.import_from_file)
+        btn_import_file.setStyleSheet("background-color: #ffc107; color: #000; border: none;")
+        
+        btn_load_po = QPushButton("Load from Order")
+        btn_load_po.clicked.connect(self.load_from_order)
+        btn_load_po.setStyleSheet(f"background-color: {COLOR_NAVBAR}; color: white; border: none;")
+        
+        tool_bar.addWidget(btn_import_file)
+        tool_bar.addWidget(btn_load_po)
+        tool_bar.addStretch()
+        layout.addLayout(tool_bar)
+
+        # 3. TABLE
         self.table = QTableWidget()
         self.table.setColumnCount(9) 
-        
-        # Updated Headers to be Explicit
         headers = [
-            "Medicine Name", "Batch No", "Mfg Date\n(MM/YY)", "Exp Date\n(MM/YY)", 
-            "Qty (Strips)", "Buy Rate\n(Per Strip)", "MRP\n(Per Strip)", "Line Total", "Action"
+            "Medicine Name", "Batch", "Mfg", "Exp", 
+            "Qty", "Buy Rate", "MRP", "Total", "Action"
         ]
         self.table.setHorizontalHeaderLabels(headers)
         
-        # --- ENABLE SCROLLING ---
+        # Column Resizing Logic
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch) # Medicine Name stretches
+        
+        # Set fixed widths for small columns to prevent squashing
+        self.table.setColumnWidth(1, 100) # Batch
+        self.table.setColumnWidth(2, 90)  # Mfg
+        self.table.setColumnWidth(3, 90)  # Exp
+        self.table.setColumnWidth(4, 70)  # Qty
+        self.table.setColumnWidth(5, 100) # Rate
+        self.table.setColumnWidth(6, 100) # MRP
+        self.table.setColumnWidth(7, 100) # Total
+        self.table.setColumnWidth(8, 60)  # Action
+
         self.table.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.table.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
-        
-        header = self.table.horizontalHeader()
-        header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
-        header.setStretchLastSection(False) 
-        
-        # Set Specific Widths
-        self.table.setColumnWidth(0, 300) # Medicine Name
-        self.table.setColumnWidth(1, 150) # Batch
-        self.table.setColumnWidth(2, 110) # Mfg
-        self.table.setColumnWidth(3, 110) # Exp
-        self.table.setColumnWidth(4, 100) # Qty
-        self.table.setColumnWidth(5, 120) # Buy Rate
-        self.table.setColumnWidth(6, 120) # MRP
-        self.table.setColumnWidth(7, 120) # Total
-        self.table.setColumnWidth(8, 80)  # Action
-        
-        # Row Height
-        self.table.verticalHeader().setDefaultSectionSize(50) 
+        self.table.verticalHeader().setDefaultSectionSize(45) 
 
         self.table.setRowCount(0)
         self.add_row()
         self.table.cellChanged.connect(self.on_cell_changed)
         layout.addWidget(self.table)
 
-        # 3. ROW ACTIONS
+        # 4. ROW ACTIONS
         row_btns = QHBoxLayout()
         btn_add = QPushButton("+ Add New Row")
         btn_add.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_add.clicked.connect(self.add_row)
-        btn_add.setStyleSheet(f"""
-            color: {COLOR_NAVBAR}; 
-            border: 1px dashed {COLOR_NAVBAR}; 
-            background: #f0f8ff; 
-            font-weight: bold;
-        """)
+        btn_add.setStyleSheet(f"color: {COLOR_NAVBAR}; border: 1px dashed {COLOR_NAVBAR}; background: #f0f8ff;")
         row_btns.addWidget(btn_add)
         row_btns.addStretch()
         layout.addLayout(row_btns)
 
-        # 4. FOOTER
+        # 5. FOOTER (FIXED ALIGNMENT)
         footer = QFrame()
         footer.setStyleSheet(f"background-color: {COLOR_PANEL}; border: 1px solid {COLOR_BORDER}; border-radius: 8px;")
-        foot_lay = QHBoxLayout(footer)
-        foot_lay.setContentsMargins(20, 15, 20, 15)
-        foot_lay.setSpacing(20)
+        
+        # Footer Main Layout (Vertical: Top for Payment, Bottom for Buttons)
+        foot_main = QVBoxLayout(footer)
+        foot_main.setContentsMargins(15, 10, 15, 10)
+        foot_main.setSpacing(10)
 
-        btn_clear = QPushButton("Clear Form")
-        btn_clear.clicked.connect(self.clear_form)
-        btn_clear.setStyleSheet("color: #dc3545; border-color: #dc3545;")
-        foot_lay.addWidget(btn_clear)
-        foot_lay.addStretch()
-
+        # --- Row 1: Payment Details (Horizontal) ---
+        pay_row = QHBoxLayout()
+        
         lbl_pay_mode = QLabel("Payment:")
         lbl_pay_mode.setStyleSheet("font-weight: bold;")
         self.cmb_pay_mode = QComboBox()
         self.cmb_pay_mode.addItems(["Credit", "Cash", "UPI", "Cheque"])
-        self.cmb_pay_mode.setFixedWidth(120)
-
-        lbl_paid = QLabel("Paid Amount:")
+        self.cmb_pay_mode.setFixedWidth(140) # Fixed width
+        
+        lbl_paid = QLabel("Paid:")
         lbl_paid.setStyleSheet("font-weight: bold;")
         self.inp_paid = QDoubleSpinBox()
         self.inp_paid.setRange(0, 9999999)
         self.inp_paid.setPrefix("₹ ")
-        self.inp_paid.setFixedWidth(140)
+        self.inp_paid.setFixedWidth(140) # Fixed width
         self.inp_paid.valueChanged.connect(self.calculate_balance)
 
         lbl_bal = QLabel("Balance:")
         lbl_bal.setStyleSheet("font-weight: bold;")
         self.inp_balance = QLineEdit("₹ 0.00")
         self.inp_balance.setReadOnly(True)
-        self.inp_balance.setFixedWidth(140)
+        self.inp_balance.setFixedWidth(150) # Fixed width prevents stretching
         self.inp_balance.setStyleSheet(f"background-color: #f1f3f4; color: {COLOR_DELETE}; font-weight: bold; border: 1px solid {COLOR_DELETE};")
 
-        foot_lay.addWidget(lbl_pay_mode)
-        foot_lay.addWidget(self.cmb_pay_mode)
-        foot_lay.addWidget(lbl_paid)
-        foot_lay.addWidget(self.inp_paid)
-        foot_lay.addWidget(lbl_bal)
-        foot_lay.addWidget(self.inp_balance)
+        pay_row.addWidget(lbl_pay_mode)
+        pay_row.addWidget(self.cmb_pay_mode)
+        pay_row.addSpacing(20)
+        pay_row.addWidget(lbl_paid)
+        pay_row.addWidget(self.inp_paid)
+        pay_row.addSpacing(20)
+        pay_row.addWidget(lbl_bal)
+        pay_row.addWidget(self.inp_balance)
+        pay_row.addStretch() # Pushes everything to the left
 
+        foot_main.addLayout(pay_row)
+
+        # --- Row 2: Buttons & Total (Horizontal) ---
+        btn_row = QHBoxLayout()
+
+        btn_clear = QPushButton("Clear Form")
+        btn_clear.clicked.connect(self.clear_form)
+        btn_clear.setFixedWidth(120)
+        btn_clear.setStyleSheet("color: #dc3545; border-color: #dc3545;")
+        
         self.lbl_grand_total = QLabel("Total: ₹0.00")
-        self.lbl_grand_total.setStyleSheet(f"font-size: 22px; font-weight: 800; color: {COLOR_NAVBAR}; margin-left: 20px;")
-        foot_lay.addWidget(self.lbl_grand_total)
+        self.lbl_grand_total.setStyleSheet(f"font-size: 22px; font-weight: 800; color: {COLOR_NAVBAR};")
+        self.lbl_grand_total.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
         btn_save = QPushButton("SAVE INVOICE")
         btn_save.setFixedSize(160, 45)
         btn_save.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_save.setStyleSheet(f"background-color: {COLOR_GREEN}; color: white; border: none; font-size: 14px; border-radius: 6px; font-weight: bold;")
         btn_save.clicked.connect(self.save_invoice)
-        foot_lay.addWidget(btn_save)
 
+        btn_row.addWidget(btn_clear)
+        btn_row.addStretch()
+        btn_row.addWidget(self.lbl_grand_total)
+        btn_row.addSpacing(20)
+        btn_row.addWidget(btn_save)
+
+        foot_main.addLayout(btn_row)
         layout.addWidget(footer)
 
     # -----------------------------------------------------------
@@ -308,9 +354,8 @@ class PurchaseEntryInterface(QWidget):
     # -----------------------------------------------------------
     def create_history_tab(self):
         layout = QVBoxLayout(self.tab_history)
-        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setContentsMargins(15, 15, 15, 15)
         
-        # Search Bar
         h_bar = QHBoxLayout()
         self.hist_search = QLineEdit()
         self.hist_search.setPlaceholderText("Search Invoice No or Supplier...")
@@ -320,12 +365,8 @@ class PurchaseEntryInterface(QWidget):
         h_bar.addWidget(self.hist_search)
         h_bar.addWidget(btn_refresh)
         layout.addLayout(h_bar)
-
-        # Splitter
+        
         splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.setHandleWidth(2)
-
-        # LEFT: Invoice List
         self.hist_table = QTableWidget()
         self.hist_table.setColumnCount(6)
         self.hist_table.setHorizontalHeaderLabels(["ID", "Invoice No", "Supplier", "Date", "Total Amt", "Paid"])
@@ -335,18 +376,17 @@ class PurchaseEntryInterface(QWidget):
         self.hist_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.hist_table.cellClicked.connect(self.on_history_row_clicked)
         splitter.addWidget(self.hist_table)
-
-        # RIGHT: Details Panel
+        
         self.details_panel = QFrame()
         self.details_panel.setStyleSheet("background: white; border-left: 1px solid #ccc;")
         self.details_panel.setVisible(False)
+        
         det_layout = QVBoxLayout(self.details_panel)
         det_layout.setContentsMargins(15, 15, 15, 15)
-        
         self.lbl_det_title = QLabel("Invoice Items")
         self.lbl_det_title.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {COLOR_NAVBAR}; margin-bottom: 10px;")
         det_layout.addWidget(self.lbl_det_title)
-
+        
         self.det_table = QTableWidget()
         self.det_table.setColumnCount(4)
         self.det_table.setHorizontalHeaderLabels(["Medicine", "Batch", "Qty", "Total"])
@@ -357,10 +397,9 @@ class PurchaseEntryInterface(QWidget):
         btn_close_det = QPushButton("Close Details")
         btn_close_det.clicked.connect(lambda: self.details_panel.hide())
         det_layout.addWidget(btn_close_det)
-
+        
         splitter.addWidget(self.details_panel)
         splitter.setSizes([700, 300])
-        
         layout.addWidget(splitter)
 
     def on_tab_changed(self, index):
@@ -370,7 +409,6 @@ class PurchaseEntryInterface(QWidget):
         conn = database.get_connection()
         cur = conn.cursor()
         query_txt = self.hist_search.text().strip()
-        
         sql = """
             SELECT p.invoice_id, p.invoice_number, s.Sup_name, p.invoice_date, p.total_amount, p.paid_amount
             FROM Purchase_Invoice p
@@ -378,9 +416,7 @@ class PurchaseEntryInterface(QWidget):
         """
         if query_txt:
             sql += f" WHERE p.invoice_number LIKE '%{query_txt}%' OR s.Sup_name LIKE '%{query_txt}%'"
-        
         sql += " ORDER BY p.invoice_id DESC"
-        
         cur.execute(sql)
         rows = cur.fetchall()
         conn.close()
@@ -398,15 +434,11 @@ class PurchaseEntryInterface(QWidget):
     def on_history_row_clicked(self, row, col):
         inv_id = self.hist_table.item(row, 0).text()
         inv_no = self.hist_table.item(row, 1).text()
-        
         self.lbl_det_title.setText(f"Items for Invoice: {inv_no}")
         self.details_panel.show()
         
         conn = database.get_connection()
         cur = conn.cursor()
-        # Fetching qty and rate from Invoice Table
-        # Note: These values might be stored as Unit-based depending on saving logic
-        # We display them as is.
         cur.execute("""
             SELECT d.med_name, i.batch_no, i.quantity, i.total_amount
             FROM Purchase_Invoice_Item i
@@ -420,7 +452,7 @@ class PurchaseEntryInterface(QWidget):
         for i, item in enumerate(items):
             self.det_table.setItem(i, 0, QTableWidgetItem(str(item[0])))
             self.det_table.setItem(i, 1, QTableWidgetItem(str(item[1])))
-            self.det_table.setItem(i, 2, QTableWidgetItem(str(item[2]))) # Qty (Is it strips or tabs? Depends on saving logic)
+            self.det_table.setItem(i, 2, QTableWidgetItem(str(item[2])))
             self.det_table.setItem(i, 3, QTableWidgetItem(f"₹{item[3]:.2f}"))
 
     # -----------------------------------------------------------
@@ -431,7 +463,7 @@ class PurchaseEntryInterface(QWidget):
         self.table.insertRow(rc)
         
         name_edit = QLineEdit()
-        name_edit.setPlaceholderText("Type Medicine Name...")
+        name_edit.setPlaceholderText("Search...")
         completer = QCompleter(self.med_names)
         completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
         name_edit.setCompleter(completer)
@@ -439,7 +471,7 @@ class PurchaseEntryInterface(QWidget):
         self.table.setCellWidget(rc, 0, name_edit)
         
         btn_del = QPushButton("✕")
-        btn_del.setFixedSize(30, 30)
+        btn_del.setFixedSize(25, 25)
         btn_del.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_del.setStyleSheet(f"color: white; background-color: {COLOR_DELETE}; border: none; border-radius: 4px; font-weight: bold;")
         btn_del.clicked.connect(lambda: self.remove_specific_row(btn_del))
@@ -454,7 +486,6 @@ class PurchaseEntryInterface(QWidget):
     def on_name_entered(self, row, widget):
         name = widget.text().strip()
         if not name: return
-        
         conn = database.get_connection()
         cur = conn.cursor()
         cur.execute("SELECT med_id FROM Medicine_Details WHERE med_name = ?", (name,))
@@ -466,8 +497,8 @@ class PurchaseEntryInterface(QWidget):
             dummy_item.setData(Qt.ItemDataRole.UserRole, res[0]) 
             self.table.setItem(row, 0, dummy_item)
         else:
-            QMessageBox.warning(self, "Unknown Product", f"'{name}' not found. Please add it in Masters first.")
-            widget.clear()
+            if not self.table.item(row, 0) or not self.table.item(row, 0).data(Qt.ItemDataRole.UserRole):
+                 pass 
 
     def remove_specific_row(self, btn):
         for r in range(self.table.rowCount()):
@@ -477,6 +508,125 @@ class PurchaseEntryInterface(QWidget):
                 self.update_grand_total()
                 return
 
+    # -----------------------------------------------------------
+    # IMPORT LOGIC (CSV/EXCEL)
+    # -----------------------------------------------------------
+    def import_from_file(self):
+        file_path, _ = QFileDialog.getOpenFileName(self, "Open File", "", "Excel/CSV Files (*.xlsx *.xls *.csv)")
+        if not file_path:
+            return
+
+        try:
+            if file_path.endswith('.csv'):
+                df = pd.read_csv(file_path)
+            else:
+                df = pd.read_excel(file_path)
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Could not read file:\n{str(e)}")
+            return
+
+        # Normalize Headers
+        df.columns = df.columns.astype(str).str.lower().str.strip()
+        
+        # Mappings
+        map_name = ['medicine', 'medicine name', 'name', 'item', 'description', 'product']
+        map_qty = ['qty', 'quantity', 'count', 'units', 'pieces']
+        map_price = ['price', 'rate', 'cost', 'buy rate', 'p.price', 'purchase price']
+        map_mrp = ['mrp', 'sale price', 'selling price']
+
+        col_name = next((c for c in map_name if c in df.columns), None)
+        col_qty = next((c for c in map_qty if c in df.columns), None)
+        col_price = next((c for c in map_price if c in df.columns), None)
+        col_mrp = next((c for c in map_mrp if c in df.columns), None)
+
+        if not col_name:
+            QMessageBox.warning(self, "Error", "Could not find a 'Medicine Name' column.")
+            return
+
+        conn = database.get_connection()
+        cur = conn.cursor()
+
+        for index, row in df.iterrows():
+            med_name = str(row[col_name]).strip()
+            qty = str(row[col_qty]) if col_qty else "0"
+            price = str(row[col_price]) if col_price else "0"
+            mrp = str(row[col_mrp]) if col_mrp else "0"
+
+            r = self.table.rowCount()
+            self.add_row()
+
+            widget_name = self.table.cellWidget(r, 0)
+            widget_name.setText(med_name)
+
+            cur.execute("SELECT med_id FROM Medicine_Details WHERE med_name = ?", (med_name,))
+            res = cur.fetchone()
+            if res:
+                dummy_item = QTableWidgetItem()
+                dummy_item.setData(Qt.ItemDataRole.UserRole, res[0])
+                self.table.setItem(r, 0, dummy_item)
+
+            self.table.setItem(r, 4, QTableWidgetItem(str(qty)))
+            self.table.setItem(r, 5, QTableWidgetItem(str(price)))
+            self.table.setItem(r, 6, QTableWidgetItem(str(mrp)))
+            
+            self.on_cell_changed(r, 4)
+
+        conn.close()
+        QMessageBox.information(self, "Success", "Data Imported Successfully. Please fill Batch/Expiry manually.")
+
+    # -----------------------------------------------------------
+    # IMPORT FROM ORDER LOGIC
+    # -----------------------------------------------------------
+    def load_from_order(self):
+        dlg = OrderSelectionDialog(self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            po_id = dlg.selected_po_id
+            self.load_order_items(po_id)
+
+    def load_order_items(self, po_id):
+        conn = database.get_connection()
+        cur = conn.cursor()
+        
+        cur.execute("""
+            SELECT s.Sup_name, s.Supp_id 
+            FROM Purchase_order po 
+            JOIN Supplier s ON po.supp_id = s.Supp_id 
+            WHERE po.po_id = ?
+        """, (po_id,))
+        supp_row = cur.fetchone()
+        
+        if supp_row:
+            index = self.cmb_supplier.findData(supp_row[1])
+            if index >= 0:
+                self.cmb_supplier.setCurrentIndex(index)
+            else:
+                self.cmb_supplier.setEditText(supp_row[0])
+
+        cur.execute("""
+            SELECT d.med_name, pi.Quantity
+            FROM PO_item pi
+            JOIN Medicine_Details d ON pi.Med_id = d.Med_id
+            WHERE pi.po_id = ?
+        """, (po_id,))
+        items = cur.fetchall()
+        conn.close()
+
+        self.table.setRowCount(0)
+        
+        for med_name, qty in items:
+            r = self.table.rowCount()
+            self.add_row()
+            widget_name = self.table.cellWidget(r, 0)
+            widget_name.setText(med_name)
+            self.on_name_entered(r, widget_name)
+            self.table.setItem(r, 4, QTableWidgetItem(str(qty)))
+            self.on_cell_changed(r, 4)
+
+        QMessageBox.information(self, "Loaded", f"Loaded items from Order #{po_id}.")
+
+    # -----------------------------------------------------------
+    # STANDARD LOGIC
+    # -----------------------------------------------------------
     def load_suppliers(self):
         conn = database.get_connection()
         cur = conn.cursor()
@@ -491,7 +641,7 @@ class PurchaseEntryInterface(QWidget):
         finally: conn.close()
 
     def on_cell_changed(self, row, col):
-        if col in [4, 5]: # Qty (Strips), Buy Rate (Per Strip)
+        if col in [4, 5]: # Qty, Rate
             try:
                 qty_item = self.table.item(row, 4)
                 rate_item = self.table.item(row, 5)
@@ -499,7 +649,7 @@ class PurchaseEntryInterface(QWidget):
                 qty = float(qty_item.text()) if qty_item and qty_item.text() else 0
                 rate = float(rate_item.text()) if rate_item and rate_item.text() else 0
                 
-                total = qty * rate # Total Cost for line (Matches Invoice Total)
+                total = qty * rate
                 
                 self.table.blockSignals(True)
                 self.table.setItem(row, 7, QTableWidgetItem(f"{total:.2f}"))
@@ -570,15 +720,18 @@ class PurchaseEntryInterface(QWidget):
                 med_id = dummy.data(Qt.ItemDataRole.UserRole) if dummy else None
                 
                 if not med_id:
-                    QMessageBox.warning(self, "Error", f"Row {r+1}: Product not valid.")
-                    return
+                    cur.execute("SELECT med_id FROM Medicine_Details WHERE med_name=?", (name_widget.text().strip(),))
+                    res = cur.fetchone()
+                    if res: med_id = res[0]
+                    else:
+                        QMessageBox.warning(self, "Error", f"Row {r+1}: Product '{name_widget.text()}' not found in DB.")
+                        return
 
                 try:
                     batch = self.table.item(r, 1).text().strip() if self.table.item(r, 1) else ""
                     mfg = self.table.item(r, 2).text().strip() if self.table.item(r, 2) else ""
                     exp = self.table.item(r, 3).text().strip() if self.table.item(r, 3) else ""
                     
-                    # User Input (Strips)
                     qty_strips = float(self.table.item(r, 4).text() or 0)
                     rate_per_strip = float(self.table.item(r, 5).text() or 0)
                     mrp_per_strip = float(self.table.item(r, 6).text() or 0)
@@ -588,7 +741,6 @@ class PurchaseEntryInterface(QWidget):
                         QMessageBox.warning(self, "Error", f"Row {r+1}: Batch and Expiry are required.")
                         return
 
-                    # --- KEY CHANGE: CONVERT TO TABLETS ---
                     cur.execute("SELECT tabs_per_strip FROM Medicine_Details WHERE med_id = ?", (med_id,))
                     res = cur.fetchone()
                     tabs_per_strip = int(res[0]) if res and res[0] else 1
@@ -618,47 +770,39 @@ class PurchaseEntryInterface(QWidget):
                 QMessageBox.warning(self, "Error", "No items to save.")
                 return
 
-            # 1. Invoice Header
             cur.execute("""
                 INSERT INTO Purchase_Invoice (invoice_number, supp_id, invoice_date, payment_mode, total_amount, paid_amount, balance, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
             """, (inv_no, supp_id, date, pay_mode, total_val, paid_amt, balance_amt))
             inv_id = cur.lastrowid
             
-            # 2. Items & Stock (Storing Units/Tablets now)
             for row in rows_to_save:
-                # Saving Units into Invoice Item table too, to maintain consistency with Stock table.
-                # If we saved Strips here, later joins with Stock (Units) would be complex.
                 cur.execute("""
                     INSERT INTO Purchase_Invoice_Item 
                     (invoice_id, Med_id, batch_no, expiry_date, quantity, purchase_rate_incl, mrp, total_amount)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """, (inv_id, row['med_id'], row['batch'], row['exp'], row['qty_units'], row['rate_unit'], row['mrp_unit'], row['total']))
                 
-                # Check for existing batch in Stock
                 cur.execute("SELECT stock_id FROM Medicine_Stock WHERE med_id = ? AND batch_no = ?", (row['med_id'], row['batch']))
                 existing = cur.fetchone()
                 
                 if existing:
-                    # Update existing batch quantity and rates (Unit based)
                     cur.execute("""
                         UPDATE Medicine_Stock 
                         SET quantity = quantity + ?, purchase_rate = ?, sale_rate = ? 
                         WHERE stock_id = ?
                     """, (row['qty_units'], row['rate_unit'], row['mrp_unit'], existing[0]))
                 else:
-                    # Create new batch (Unit based)
                     cur.execute("""
                         INSERT INTO Medicine_Stock (med_id, batch_no, mfg_date, exp_date, quantity, purchase_rate, sale_rate) 
                         VALUES (?, ?, ?, ?, ?, ?, ?)
                     """, (row['med_id'], row['batch'], row['mfg'], row['exp'], row['qty_units'], row['rate_unit'], row['mrp_unit']))
 
-            # 3. UPDATE SUPPLIER BALANCE LOGIC
             if balance_amt != 0:
                 cur.execute("UPDATE Supplier SET balance = balance + ? WHERE Supp_id = ?", (balance_amt, supp_id))
 
             conn.commit()
-            QMessageBox.information(self, "Success", "Invoice Saved! Stock updated in Units (Tablets).")
+            QMessageBox.information(self, "Success", "Invoice Saved! Stock updated.")
             self.clear_form()
             
         except Exception as e:

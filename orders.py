@@ -178,10 +178,10 @@ class OrdersInterface(QWidget):
             try:
                 if exp_date_str:
                     if "/" in exp_date_str:
-                         m, y = map(int, exp_date_str.split('/'))
-                         exp_date = datetime.date(2000+y, m, 1)
+                          m, y = map(int, exp_date_str.split('/'))
+                          exp_date = datetime.date(2000+y, m, 1)
                     else:
-                         exp_date = datetime.datetime.strptime(exp_date_str, "%Y-%m-%d").date()
+                          exp_date = datetime.datetime.strptime(exp_date_str, "%Y-%m-%d").date()
                     
                     days_left = (exp_date - today).days
                     if days_left < 120: is_expiring = True
@@ -650,12 +650,14 @@ class OrdersInterface(QWidget):
         self.combo_status = QComboBox()
         self.combo_status.addItems(["Created", "Sent", "Received", "Declined"])
         self.btn_update_status = QPushButton("Update")
+        self.btn_update_status.setFixedWidth(100) # Resized Width
         self.btn_update_status.clicked.connect(self.update_order_status)
         status_layout.addWidget(self.combo_status)
         status_layout.addWidget(self.btn_update_status)
         prev_layout.addLayout(status_layout)
         
         self.btn_edit_resend = QPushButton("✎ Edit / Resend Order")
+        self.btn_edit_resend.setFixedWidth(200) # Resized Width
         self.btn_edit_resend.setStyleSheet(f"background-color: {COLOR_NAVBAR}; color: white;")
         self.btn_edit_resend.clicked.connect(self.load_order_for_editing)
         prev_layout.addWidget(self.btn_edit_resend)
