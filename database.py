@@ -187,7 +187,7 @@ def init_db():
     )
     """)
 
-    # --- 10. EXPENSES (NEW TABLE) ---
+    # --- 10. EXPENSES ---
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS Expenses (
         expense_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -197,6 +197,33 @@ def init_db():
         expense_date TEXT NOT NULL,
         payment_mode TEXT,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+
+    # --- 11. PURCHASE RETURN (NEW TABLES) ---
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS Purchase_Return (
+        return_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        return_number TEXT,
+        supp_id INTEGER,
+        return_date TEXT,
+        total_amount REAL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (supp_id) REFERENCES Supplier(Supp_id)
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS Purchase_Return_Item (
+        pr_item_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        return_id INTEGER,
+        Med_id INTEGER,
+        batch_no TEXT,
+        expiry_date TEXT,
+        return_qty REAL,
+        return_amount REAL,
+        FOREIGN KEY (return_id) REFERENCES Purchase_Return(return_id),
+        FOREIGN KEY (Med_id) REFERENCES Medicine_Details(med_id)
     )
     """)
 

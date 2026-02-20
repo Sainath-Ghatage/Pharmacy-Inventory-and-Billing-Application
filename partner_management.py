@@ -224,15 +224,22 @@ class GenericPartnerTab(QWidget):
             bal_box = QGroupBox("Account Balance")
             bal_layout = QVBoxLayout()
             lbl_bal = QLabel(f"₹ {current_balance:.2f}")
-            lbl_bal.setStyleSheet(f"font-size: 20px; font-weight: bold; color: {COLOR_DELETE if current_balance > 0 else COLOR_SUCCESS};")
+            
+            # Color logic: Red if not 0, Green if 0
+            color_bal = COLOR_DELETE if current_balance != 0 else COLOR_SUCCESS
+            lbl_bal.setStyleSheet(f"font-size: 20px; font-weight: bold; color: {color_bal};")
             bal_layout.addWidget(lbl_bal)
 
-            if current_balance > 0:
+            # --- UPDATED SETTLE LOGIC (Supports Negative and Positive Balances) ---
+            if current_balance != 0:
                 settle_layout = QHBoxLayout()
                 self.spin_settle = QDoubleSpinBox()
                 self.spin_settle.setPrefix("₹ ")
-                self.spin_settle.setMaximum(current_balance)
-                self.spin_settle.setValue(current_balance)
+                
+                # Use absolute value for the max input limit
+                abs_balance = abs(current_balance)
+                self.spin_settle.setMaximum(abs_balance)
+                self.spin_settle.setValue(abs_balance)
                 self.spin_settle.setStyleSheet("color: black;")
                 
                 btn_settle = QPushButton("Settle")
@@ -242,6 +249,7 @@ class GenericPartnerTab(QWidget):
                 settle_layout.addWidget(self.spin_settle)
                 settle_layout.addWidget(btn_settle)
                 bal_layout.addLayout(settle_layout)
+                
             bal_box.setLayout(bal_layout)
             self.side_layout.addWidget(bal_box)
 
@@ -284,13 +292,24 @@ class GenericPartnerTab(QWidget):
     def settle_balance(self, pk_id, current_bal):
         amount = self.spin_settle.value()
         if amount <= 0: return
-        new_bal = current_bal - amount
+        
+        # --- NEW LOGIC: Move balance closer to zero whether it's positive or negative ---
+        if current_bal > 0:
+            new_bal = current_bal - amount
+        else:
+            new_bal = current_bal + amount
+            
         conn = database.get_connection()
         cursor = conn.cursor()
         try:
             cursor.execute(f"UPDATE {self.table_name} SET balance = ? WHERE {self.pk_column} = ?", (new_bal, pk_id))
             conn.commit()
-            QMessageBox.information(self, "Success", f"Payment of ₹{amount} recorded.")
+            msg_box = QMessageBox(self)
+            msg_box.setWindowTitle("Success")
+            msg_box.setText(f"Payment of ₹{amount} recorded.")
+            msg_box.setIcon(QMessageBox.Icon.Information)
+            msg_box.setStyleSheet("QLabel { color: black; } QPushButton { color: black; background-color: white; border: 1px solid gray; padding: 5px; }")
+            msg_box.exec()
             self.load_data() 
             self.side_panel.hide() 
         except Exception as e:

@@ -310,11 +310,20 @@ class PharmacyDetailsInterface(QWidget):
 
     def save_data(self):
         name = self.inp_name.text().strip()
+        gstin = self.inp_gstin.text().strip()
         smtp_email = self.inp_smtp_email.text().strip()
         smtp_pass = self.inp_smtp_pass.text().strip()
 
+        # 1. Validate Pharmacy Name
         if not name:
-            QMessageBox.warning(self, "Validation", "Pharmacy Name is required.")
+            QMessageBox.warning(self, "Validation Error", "Pharmacy Name is required.")
+            return False
+
+        # 2. Validate GSTIN (Must be exactly 15 alphanumeric characters)
+        if not gstin or len(gstin) != 15 or not gstin.isalnum():
+            QMessageBox.warning(self, "Validation Error", "GSTIN number must be exactly 15 alphanumeric characters.")
+            # Optional: Set focus back to the input field so the user can fix it immediately
+            self.inp_gstin.setFocus()
             return False
 
         conn = database.get_connection()
@@ -327,7 +336,7 @@ class PharmacyDetailsInterface(QWidget):
 
             data = (
                 name, self.inp_phone.text().strip(), self.inp_email.text().strip(),
-                self.inp_gstin.text().strip(), self.inp_license.text().strip(),
+                gstin, self.inp_license.text().strip(),
                 self.inp_address.toPlainText().strip(), smtp_email, smtp_pass
             )
 

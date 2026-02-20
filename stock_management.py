@@ -123,6 +123,7 @@ class MedicineDetailsForm(QWidget):
         super().__init__()
         self.edit_mode_id = None 
         self.init_ui()
+        
 
     def init_ui(self):
         main_layout = QVBoxLayout(self)
@@ -140,7 +141,9 @@ class MedicineDetailsForm(QWidget):
         self.mfg = QLineEdit()
         self.hsn = QLineEdit()
         self.type = QComboBox()
-        self.type.addItems(["Tablet", "Capsule", "Syrup", "Injection", "Cream", "Medical Devices", "Other"])
+        self.type.addItems(["Tablet", "Capsule", "Syrup", "Injection", "Cream", 
+            "Ointment", "Drops", "Personal Care & Wellness", 
+            "Spray", "Powder", "Medical Devices"])
         self.rack = QLineEdit()
         self.gst = QDoubleSpinBox()
         self.gst.setValue(12.0)
@@ -239,6 +242,7 @@ class MedicineMasterView(QWidget):
     def __init__(self):
         super().__init__()
         self.init_ui()
+        self.load_data()
         
     def init_ui(self):
         layout = QVBoxLayout(self)
@@ -722,6 +726,7 @@ class StockInterface(QWidget):
                 self.add_row_exp(self.table_exp, items_exp, days_left)
                 
         conn.close()
+        self.master_view.load_data()
 
     def add_row_std(self, table, display_list, full_data):
         row = table.rowCount()

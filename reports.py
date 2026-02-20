@@ -33,10 +33,10 @@ class ReportsInterface(QWidget):
         self.setWindowTitle("Advanced Reports & Analytics")
         self.setStyleSheet(f"""
             QWidget {{ background-color: {COLOR_BG}; font-family: 'Segoe UI', sans-serif; color: {COLOR_TEXT}; }}
-            QTableWidget {{ background-color: white; border: 1px solid #ccc; gridline-color: #f0f0f0; }}
+            QTableWidget {{ background-color: white; border: 1px solid #ccc; gridline-color: #f0f0f0; color: {COLOR_TEXT}; }}
             QTableWidget::item {{ padding: 5px; }}
-            QHeaderView::section {{ background-color: #f1f3f4; padding: 8px; border: none; border-bottom: 1px solid #ccc; font-weight: bold; font-size: 12px; }}
-            QTreeWidget {{ border: 1px solid #ccc; background-color: {COLOR_WHITE}; border-radius: 4px; }}
+            QHeaderView::section {{ background-color: #f1f3f4; padding: 8px; border: none; border-bottom: 1px solid #ccc; font-weight: bold; font-size: 12px; color: {COLOR_TEXT}; }}
+            QTreeWidget {{ border: 1px solid #ccc; background-color: {COLOR_WHITE}; border-radius: 4px; color: {COLOR_TEXT}; }}
             QTreeWidget::item {{ padding: 6px; }}
             QTreeWidget::item:selected {{ background-color: {COLOR_NAVBAR}; color: white; }}
         """)
@@ -83,6 +83,10 @@ class ReportsInterface(QWidget):
             "Fast Moving (Non-Stop)"
         ])
         
+        self.add_tree_item("Procurement & Returns", [
+            "Purchase Returns Details"
+        ])
+
         self.add_tree_item("Financial Reports", [
             "Profit & Loss (Approx)", "Balance Sheet (Approx)"
         ])
@@ -118,12 +122,14 @@ class ReportsInterface(QWidget):
         
         # Date Filters
         self.lbl_from = QLabel("From:")
+        self.lbl_from.setStyleSheet(f"color: {COLOR_TEXT};")
         self.date_from = QDateEdit(QDate.currentDate().addDays(-30))
         self.date_from.setCalendarPopup(True)
         self.date_from.setStyleSheet(self.input_style())
         self.date_from.dateChanged.connect(self.generate_report)
         
         self.lbl_to = QLabel("To:")
+        self.lbl_to.setStyleSheet(f"color: {COLOR_TEXT};")
         self.date_to = QDateEdit(QDate.currentDate())
         self.date_to.setCalendarPopup(True)
         self.date_to.setStyleSheet(self.input_style())
@@ -147,7 +153,7 @@ class ReportsInterface(QWidget):
         self.stack.addWidget(self.table)
         
         # 2. Graph View
-        self.canvas = MplCanvas(self, width=5, height=4, dpi=120) # Higher DPI
+        self.canvas = MplCanvas(self, width=5, height=4, dpi=120) 
         self.stack.addWidget(self.canvas)
         
         content_layout.addWidget(self.stack)
@@ -167,7 +173,7 @@ class ReportsInterface(QWidget):
         self.tree.addTopLevelItem(parent)
 
     def input_style(self):
-        return f"border: 1px solid #ced4da; padding: 5px; border-radius: 4px; background: white; min-width: 100px;"
+        return f"border: 1px solid #ced4da; padding: 5px; border-radius: 4px; background: white; color: black; min-width: 100px;"
 
     def on_report_selected(self):
         item = self.tree.currentItem()
@@ -180,6 +186,7 @@ class ReportsInterface(QWidget):
         is_date_relevant = report_name in [
             "Daily Sales Journal", "Sundry Sales Details", "Customer/Patient Sales", 
             "Doctor Wise Sales", "Product Wise Sales", 
+            "Slow Moving Products", "Purchase Returns Details", # <--- NEWLY ADDED TO FILTER LIST
             "Daily Sales Graph", "Monthly Sales Graph", "Profit & Loss (Approx)"
         ]
         
@@ -260,7 +267,6 @@ class ReportsInterface(QWidget):
 
             # === STOCK REPORTS ===
             elif report_name == "Current Stock Report":
-                # Converts total units to "X Strips + Y Tabs" for display
                 query = """
                     SELECT d.med_name, d.type, d.rack_no, 
                            CASE WHEN d.tabs_per_strip > 1 THEN 
@@ -275,7 +281,6 @@ class ReportsInterface(QWidget):
                 self.run_table_query(cursor, query, None, ["Medicine", "Type", "Rack", "Total Qty"])
 
             elif report_name == "Batch Wise Stock":
-                # Shows raw quantity because batch wise might be easier to read as total tabs for auditing
                 query = """
                     SELECT d.med_name, s.batch_no, s.exp_date, s.quantity, s.purchase_rate, s.sale_rate 
                     FROM Medicine_Stock s 
@@ -310,31 +315,37 @@ class ReportsInterface(QWidget):
                 """
                 self.run_table_query(cursor, query, None, ["Supplier", "Medicine", "Total Purchased Qty"])
 
+            # --- UPDATED SLOW MOVING REPORT ---
             elif report_name == "Slow Moving Products":
+                # Now accepts the Date range and shows products that sold 10 units or less (including 0)
                 query = """
-                    SELECT med_name, type, manufacturer FROM Medicine_Details 
-                    WHERE med_id NOT IN (
-                        SELECT DISTINCT Med_id FROM Bill_Item 
-                        JOIN Bill ON Bill_Item.Bill_id = Bill.Bill_id 
-                        WHERE date(Bill.bill_date) >= date('now', '-30 days')
-                    )
+                    SELECT m.med_name, m.type, IFNULL(SUM(bi.quantity), 0) as sold_qty
+                    FROM Medicine_Details m
+                    LEFT JOIN Bill_Item bi ON m.med_id = bi.Med_id
+                    LEFT JOIN Bill b ON bi.Bill_id = b.Bill_id AND date(b.bill_date) BETWEEN ? AND ?
+                    GROUP BY m.med_id
+                    HAVING sold_qty <= 10
+                    ORDER BY sold_qty ASC
                 """
-                self.run_table_query(cursor, query, None, ["Medicine", "Type", "Manufacturer"])
+                self.run_table_query(cursor, query, (d_from, d_to), ["Medicine", "Type", "Units Sold (Within Date Range)"])
 
+            # --- UPDATED EXCESS STOCK REPORT ---
             elif report_name == "Excess Stock (>100)":
-                # Adjusted to show Strips/Tabs logic
+                # Now explicitly includes the raw unit stock amount in the table
                 query = """
                     SELECT d.med_name, 
                            CASE WHEN d.tabs_per_strip > 1 THEN 
                                (CAST(SUM(s.quantity) AS INTEGER) / d.tabs_per_strip) || 's + ' || (CAST(SUM(s.quantity) AS INTEGER) % d.tabs_per_strip) || 't'
                            ELSE 
                                SUM(s.quantity) || ' Units'
-                           END
+                           END,
+                           SUM(s.quantity)
                     FROM Medicine_Stock s 
                     JOIN Medicine_Details d ON s.med_id = d.med_id 
                     GROUP BY d.med_id HAVING SUM(s.quantity) > 100
+                    ORDER BY SUM(s.quantity) DESC
                 """
-                self.run_table_query(cursor, query, None, ["Medicine", "Total Quantity"])
+                self.run_table_query(cursor, query, None, ["Medicine", "Display Qty (Strips)", "Raw Unit Stock"])
 
             elif report_name == "Fast Moving (Non-Stop)":
                  query = """
@@ -344,6 +355,19 @@ class ReportsInterface(QWidget):
                     GROUP BY m.med_id ORDER BY freq DESC LIMIT 50
                 """
                  self.run_table_query(cursor, query, None, ["Medicine", "Sales Frequency"])
+
+            # --- NEW: PURCHASE RETURNS LOGIC ---
+            elif report_name == "Purchase Returns Details":
+                 query = """
+                    SELECT date(pr.return_date), pr.return_number, s.Sup_name, m.med_name, pri.return_qty, pri.return_amount
+                    FROM Purchase_Return_Item pri
+                    JOIN Purchase_Return pr ON pri.return_id = pr.return_id
+                    JOIN Supplier s ON pr.supp_id = s.Supp_id
+                    JOIN Medicine_Details m ON pri.Med_id = m.med_id
+                    WHERE date(pr.return_date) BETWEEN ? AND ?
+                    ORDER BY pr.return_date DESC
+                 """
+                 self.run_table_query(cursor, query, (d_from, d_to), ["Return Date", "Debit Note #", "Supplier", "Returned Medicine", "Qty Returned", "Amount (₹)"])
 
             # === FINANCIALS ===
             elif report_name == "Profit & Loss (Approx)":
@@ -440,7 +464,7 @@ class ReportsInterface(QWidget):
         for i, h_text in enumerate(headers):
             h_text_lower = h_text.lower()
             # If column is descriptive, Stretch it
-            if any(x in h_text_lower for x in ['name', 'item', 'description', 'patient', 'doctor', 'medicine']):
+            if any(x in h_text_lower for x in ['name', 'item', 'description', 'patient', 'doctor', 'medicine', 'supplier']):
                 header.setSectionResizeMode(i, QHeaderView.ResizeMode.Stretch)
                 has_stretch = True
             else:

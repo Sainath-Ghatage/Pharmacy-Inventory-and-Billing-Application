@@ -21,7 +21,8 @@ from stock_management import StockInterface
 from orders import OrdersInterface
 from purchase_entry import PurchaseEntryInterface 
 from partner_management import PartnerManagementInterface
-from accounts import AccountsInterface # <--- NEW IMPORT
+from accounts import AccountsInterface
+from purchase_return import PurchaseReturnInterface # <--- NEW IMPORT
 
 # ---------- COLORS ----------
 COLOR_NAVBAR = "#0d47a1"   # Deep Blue
@@ -238,16 +239,17 @@ class MainWindow(QWidget):
         add_nav_btn("Billing", "Billing / POS")
 
         # 2. INVENTORY
-        add_header("Inventory & Procurement")
+        add_header("Inventory && Procurement")
         add_nav_btn("Inventory", "Medicine Stock")
         add_nav_btn("Purchase Entry", "Purchase Invoice") 
+        add_nav_btn("Purchase Returns", "Purchase Returns") # <--- ADDED BUTTON
         add_nav_btn("Orders", "Purchase Orders")
         
         # 3. RECORDS
         add_header("Records")
         add_nav_btn("Sales", "Sales History")
-        add_nav_btn("Reports", "Reports & Analytics")
-        add_nav_btn("Accounts", "Expenses & Accounts") # <--- ADDED BUTTON
+        add_nav_btn("Reports", "Reports && Analytics")
+        add_nav_btn("Accounts", "Expenses && Accounts")
 
         # 4. ADMIN
         add_header("Admin")
@@ -257,7 +259,7 @@ class MainWindow(QWidget):
         layout.addStretch()
         
         # Version Info
-        ver = QLabel("v2.2.0")
+        ver = QLabel("v2.3.0")
         ver.setAlignment(Qt.AlignmentFlag.AlignCenter)
         ver.setStyleSheet("color: #64b5f6; font-size: 11px;")
         layout.addWidget(ver)
@@ -322,15 +324,20 @@ class MainWindow(QWidget):
         self.orders_page = OrdersInterface()
         self.pharma_page = PharmacyDetailsInterface()
         self.purchase_page = PurchaseEntryInterface() 
+        self.purchase_return_page = PurchaseReturnInterface() # <--- INSTANTIATE NEW PAGE
         self.partner_page = PartnerManagementInterface()
-        self.accounts_page = AccountsInterface() # <--- INSTANTIATE ACCOUNTS
+        self.accounts_page = AccountsInterface() 
 
         # Connect Signals
         self.sales_page.edit_bill_signal.connect(self.handle_edit_request)
         self.stock_page.stock_updated.connect(self.billing_page.refresh_cache)
         
-        # When stock changes (from manual edit OR purchase entry), refresh other views
+        # When stock changes (from manual edit OR purchase entry OR return), refresh other views
         self.stock_page.stock_updated.connect(self.dashboard_page.refresh_data)
+        
+        # Connect the return page signal to refresh the dashboard and billing cache
+        self.purchase_return_page.return_processed.connect(self.dashboard_page.refresh_data)
+        self.purchase_return_page.return_processed.connect(self.billing_page.refresh_cache)
 
         # Mapping names to instances
         self.pages = {
@@ -342,8 +349,9 @@ class MainWindow(QWidget):
             "Orders": self.orders_page,
             "Pharmacy": self.pharma_page,
             "Purchase Entry": self.purchase_page,
+            "Purchase Returns": self.purchase_return_page, # <--- ADD TO MAP
             "Partners": self.partner_page,
-            "Accounts": self.accounts_page # <--- ADD TO MAP
+            "Accounts": self.accounts_page 
         }
 
         # Add to Stack
@@ -359,13 +367,63 @@ class MainWindow(QWidget):
 
     def switch_page(self, name):
         if name in self.pages:
-            self.stack.setCurrentWidget(self.pages[name])
+            current_page = self.pages[name]
+            self.stack.setCurrentWidget(current_page)
             
-            # Refresh dashboard if switching to it
-            if name == "Dashboard":
-                self.dashboard_page.refresh_data()
+            # ==========================================
+            # SMART LAZY REFRESH LOGIC
+            # Instantly fetch fresh data when a tab is opened
+            # ==========================================
+            try:
+                if name == "Dashboard":
+                    self.dashboard_page.refresh_data()
+                    
+                elif name == "Billing":
+                    if hasattr(self.billing_page, 'refresh_cache'):
+                        self.billing_page.refresh_cache()
+                        
+                elif name == "Inventory":
+                    if hasattr(self.stock_page, 'load_data'):
+                        self.stock_page.load_data()
+                        
+                elif name == "Purchase Entry":
+                    if hasattr(self.purchase_page, 'load_history'):
+                        self.purchase_page.load_history()
+                        
+                elif name == "Purchase Returns":
+                    if hasattr(self.purchase_return_page, 'load_initial_data'):
+                        self.purchase_return_page.load_initial_data() 
+                        
+                elif name == "Sales":
+                    if hasattr(self.sales_page, 'load_sales_data'):
+                        self.sales_page.load_sales_data()
+                    elif hasattr(self.sales_page, 'load_data'):
+                        self.sales_page.load_data()
+                        
+                elif name == "Reports":
+                    if hasattr(self.reports_page, 'generate_report'):
+                        self.reports_page.generate_report()
+                        
+                elif name == "Orders":
+                    if hasattr(self.orders_page, 'load_history'):
+                        self.orders_page.load_history()
+                        
+                elif name == "Partners":
+                    # Refresh all three partner tabs
+                    if hasattr(self.partner_page, 'tab_customer'):
+                        self.partner_page.tab_customer.load_data()
+                        self.partner_page.tab_doctor.load_data()
+                        self.partner_page.tab_supplier.load_data()
+                        
+                elif name == "Accounts":
+                    if hasattr(self.accounts_page, 'load_expenses'):
+                        self.accounts_page.load_expenses()
+            except Exception as e:
+                print(f"Error refreshing page '{name}': {e}")
             
-            # Update visual state of buttons
+            # ==========================================
+            # Update visual state of sidebar buttons
+            # ==========================================
             for btn_name, btn in self.nav_buttons.items():
                 is_active = (btn_name == name)
                 btn.setStyleSheet(self.get_btn_style(is_active))

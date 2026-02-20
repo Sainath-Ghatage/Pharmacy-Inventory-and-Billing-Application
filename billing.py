@@ -146,7 +146,7 @@ class SingleBillTab(QWidget):
         self.lbl_grand_total = QLabel("Total: ₹0.00"); self.lbl_grand_total.setStyleSheet(f"font-size: 20px; font-weight: bold; color: {COLOR_NAVBAR}; border: none;")
         self.lbl_balance = QLabel("Balance: ₹0.00"); self.lbl_balance.setStyleSheet(f"font-size: 14px; font-weight: bold; color: {COLOR_RED_BTN}; border: none;")
         self.spin_paid = QDoubleSpinBox(); self.spin_paid.setRange(0, 999999); self.spin_paid.setPrefix("Paid: ₹ "); self.spin_paid.setFixedHeight(35); self.spin_paid.valueChanged.connect(self.calculate_balance)
-        self.btn_checkout = QPushButton("CHECKOUT & PRINT")
+        self.btn_checkout = QPushButton("CHECKOUT && PRINT")
         self.btn_checkout.setFixedHeight(50); self.btn_checkout.clicked.connect(self.process_checkout)
         self.btn_checkout.setStyleSheet(f"background-color: {COLOR_GREEN_BTN}; color: white; font-weight: bold; border-radius: 5px; font-size: 15px;")
         
@@ -420,7 +420,7 @@ class SingleBillTab(QWidget):
 class BillingInterface(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Billing & POS")
+        self.setWindowTitle("Billing && POS")
         self.setStyleSheet(GLOBAL_STYLE)
         
         self.layout = QVBoxLayout(self); self.layout.setContentsMargins(0,0,0,0)

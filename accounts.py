@@ -52,14 +52,14 @@ class AccountsInterface(QWidget):
 
         # --- LEFT: ADD EXPENSE FORM ---
         form_frame = QFrame()
-        form_frame.setFixedWidth(350)
+        form_frame.setFixedWidth(450) # <-- INCREASED WIDTH HERE (Was 350)
         form_frame.setStyleSheet(f"background-color: {COLOR_WHITE}; border: 1px solid {COLOR_BORDER}; border-radius: 8px;")
         form_layout = QVBoxLayout(form_frame)
         form_layout.setContentsMargins(20, 20, 20, 20)
         form_layout.setSpacing(15)
 
         lbl_add = QLabel("Add New Expense")
-        lbl_add.setStyleSheet(f"font-size: 16px; font-weight: bold; color: {COLOR_NAVBAR}; margin-bottom: 5px;")
+        lbl_add.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {COLOR_NAVBAR}; margin-bottom: 5px;")
         form_layout.addWidget(lbl_add)
 
         # Expense Type
@@ -107,7 +107,7 @@ class AccountsInterface(QWidget):
         form_layout.addWidget(QLabel("Notes / Description:"))
         self.txt_notes = QTextEdit()
         self.txt_notes.setPlaceholderText("Optional details...")
-        self.txt_notes.setFixedHeight(60)
+        self.txt_notes.setFixedHeight(80) # Slightly taller for better typing
         self.txt_notes.setStyleSheet(self.input_style())
         form_layout.addWidget(self.txt_notes)
 
@@ -115,9 +115,9 @@ class AccountsInterface(QWidget):
         self.btn_save = QPushButton("Save Expense")
         self.btn_save.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_save.clicked.connect(self.save_expense)
-        self.btn_save.setFixedHeight(40)
+        self.btn_save.setFixedHeight(45) # Increased button height
         self.btn_save.setStyleSheet(f"""
-            QPushButton {{ background-color: {COLOR_ACCENT}; color: white; font-weight: bold; border-radius: 5px; font-size: 14px; }}
+            QPushButton {{ background-color: {COLOR_ACCENT}; color: white; font-weight: bold; border-radius: 5px; font-size: 15px; }}
             QPushButton:hover {{ background-color: #146c43; }}
         """)
         form_layout.addWidget(self.btn_save)
@@ -144,23 +144,24 @@ class AccountsInterface(QWidget):
             "January", "February", "March", "April", "May", "June", 
             "July", "August", "September", "October", "November", "December"
         ])
-        self.cmb_filter_month.setFixedWidth(120)
+        self.cmb_filter_month.setFixedWidth(140) # <-- INCREASED WIDTH (Was 120)
         self.cmb_filter_month.setStyleSheet(self.input_style())
         filter_bar.addWidget(self.cmb_filter_month)
 
         # Year Selector
         self.spin_filter_year = QSpinBox()
         self.spin_filter_year.setRange(2000, 2100)
-        self.spin_filter_year.setFixedWidth(80)
+        self.spin_filter_year.setFixedWidth(100) # <-- INCREASED WIDTH (Was 80)
         self.spin_filter_year.setStyleSheet(self.input_style())
         filter_bar.addWidget(self.spin_filter_year)
 
         # View Button
         btn_view = QPushButton("Show Expenses")
         btn_view.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_view.setFixedHeight(35)
         btn_view.clicked.connect(self.load_expenses)
         btn_view.setStyleSheet(f"""
-            QPushButton {{ background-color: {COLOR_NAVBAR}; color: white; border-radius: 4px; padding: 5px 15px; }}
+            QPushButton {{ background-color: {COLOR_NAVBAR}; color: white; border-radius: 4px; padding: 5px 15px; font-weight: bold; }}
         """)
         filter_bar.addWidget(btn_view)
 
@@ -190,7 +191,7 @@ class AccountsInterface(QWidget):
         
         self.table.setStyleSheet(f"""
             QTableWidget {{ border: none; gridline-color: #eee; color: {COLOR_TEXT}; background-color: {COLOR_WHITE}; }}
-            QHeaderView::section {{ background-color: #f1f3f4; padding: 8px; border: none; font-weight: bold; color: {COLOR_TEXT}; }}
+            QHeaderView::section {{ background-color: #f1f3f4; padding: 8px; border: none; font-weight: bold; color: {COLOR_TEXT}; border-bottom: 1px solid #ccc; }}
             QTableWidget::item {{ color: {COLOR_TEXT}; padding: 5px; }}
             QTableWidget::item:selected {{ background-color: #d0e1f5; color: {COLOR_TEXT}; }}
         """)
@@ -205,11 +206,14 @@ class AccountsInterface(QWidget):
             QLineEdit, QComboBox, QDateEdit, QDoubleSpinBox, QSpinBox, QTextEdit {{
                 border: 1px solid {COLOR_BORDER}; 
                 border-radius: 4px; 
-                padding: 6px; 
+                padding: 8px; /* Increased padding */
+                min-height: 25px; /* Taller input fields */
                 background: {COLOR_WHITE}; 
                 color: {COLOR_TEXT}; 
             }}
-            QLineEdit:focus, QComboBox:focus {{ border: 1px solid {COLOR_NAVBAR}; }}
+            QLineEdit:focus, QComboBox:focus, QDoubleSpinBox:focus, QDateEdit:focus, QSpinBox:focus, QTextEdit:focus {{ 
+                border: 1px solid {COLOR_NAVBAR}; 
+            }}
             QComboBox QAbstractItemView {{
                 background-color: {COLOR_WHITE};
                 color: {COLOR_TEXT};
@@ -251,7 +255,14 @@ class AccountsInterface(QWidget):
             """, (exp_type, description, amount, date, mode))
             conn.commit()
             
-            QMessageBox.information(self, "Success", "Expense added successfully.")
+            # Using the customized message box to ensure black text
+            msg_box = QMessageBox(self)
+            msg_box.setWindowTitle("Success")
+            msg_box.setText("Expense added successfully.")
+            msg_box.setIcon(QMessageBox.Icon.Information)
+            msg_box.setStyleSheet("QLabel { color: black; } QPushButton { color: black; background-color: white; border: 1px solid gray; padding: 5px; }")
+            msg_box.exec()
+            
             self.clear_form()
             
             # Update filter to the date of the added expense so the user sees it immediately
@@ -307,7 +318,11 @@ class AccountsInterface(QWidget):
             self.table.setItem(i, 1, QTableWidgetItem(date))
             self.table.setItem(i, 2, QTableWidgetItem(etype))
             self.table.setItem(i, 3, QTableWidgetItem(desc))
-            self.table.setItem(i, 4, QTableWidgetItem(f"₹{amt:.2f}"))
+            
+            # Format Amount Item
+            amt_item = QTableWidgetItem(f"₹{amt:.2f}")
+            amt_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            self.table.setItem(i, 4, amt_item)
             
             # Delete Button
             btn_del = QPushButton("Delete")
@@ -325,9 +340,14 @@ class AccountsInterface(QWidget):
         conn.close()
 
     def delete_expense(self, exp_id):
-        reply = QMessageBox.question(self, "Confirm Delete", "Are you sure you want to delete this expense entry?", 
-                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-        if reply == QMessageBox.StandardButton.Yes:
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("Confirm Delete")
+        msg_box.setText("Are you sure you want to delete this expense entry?")
+        msg_box.setIcon(QMessageBox.Icon.Question)
+        msg_box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        msg_box.setStyleSheet("QLabel { color: black; } QPushButton { color: black; background-color: white; border: 1px solid gray; padding: 5px; }")
+        
+        if msg_box.exec() == QMessageBox.StandardButton.Yes:
             conn = database.get_connection()
             cursor = conn.cursor()
             try:

@@ -118,7 +118,9 @@ class OrdersInterface(QWidget):
         self.combo_type_filter = QComboBox()
         self.combo_type_filter.setView(QListView()) 
         self.combo_type_filter.addItem("All Types")
-        self.combo_type_filter.addItems(["Tablet", "Capsule", "Syrup", "Injection", "Cream", "Ointment"])
+        self.combo_type_filter.addItems(["Tablet", "Capsule", "Syrup", "Injection", "Cream", 
+            "Ointment", "Drops", "Personal Care & Wellness", 
+            "Spray", "Powder", "Medical Devices"])
         self.combo_type_filter.currentIndexChanged.connect(self.load_alerts)
 
         btn_add_selected = QPushButton("Add Selected to Order List")
@@ -546,7 +548,7 @@ class OrdersInterface(QWidget):
         
         elements.append(table)
         elements.append(Spacer(1, 40))
-        elements.append(Paragraph("Authorized Signature: _______________________", styles['Normal']))
+        
         
         try:
             doc.build(elements)

@@ -63,10 +63,10 @@ class DashboardInterface(QWidget):
         self.cards_layout = QHBoxLayout()
         self.cards_layout.setSpacing(20)
         
-        self.card_sales = self.create_metric_card("Today's Sales", "₹0.00", "▲ 0%", COLOR_ACCENT)
-        self.card_expenses = self.create_metric_card("Today's Expenses", "₹0.00", "▼ 0%", COLOR_DANGER)
-        self.card_stock = self.create_metric_card("Low Stock Items", "0", "Alert", COLOR_WARNING)
-        self.card_expiry = self.create_metric_card("Expiring (30 Days)", "0", "Warning", COLOR_DANGER)
+        self.card_sales = self.create_metric_card("Today's Sales", "₹0.00", "Daily Revenue", COLOR_ACCENT)
+        self.card_expenses = self.create_metric_card("Today's Expenses", "₹0.00", "Daily Overhead", COLOR_DANGER)
+        self.card_stock = self.create_metric_card("Low Stock Items", "0", "Items to Order", COLOR_WARNING)
+        self.card_expiry = self.create_metric_card("Expiring (30 Days)", "0", "Critical Items", COLOR_DANGER)
         
         self.cards_layout.addWidget(self.card_sales)
         self.cards_layout.addWidget(self.card_expenses)
@@ -166,20 +166,49 @@ class DashboardInterface(QWidget):
             self.update_card(self.card_expenses, f"₹{exp:,.2f}", "Daily Overhead")
         except: pass
 
-        # 3. Low Stock
+        # 3. Low Stock Check
         try:
-            cursor.execute("SELECT Count(*) FROM Medicine WHERE Quantity < 10")
+            # Check if min_qty column exists to avoid crash, fallback to 10 if not
+            cursor.execute("PRAGMA table_info(Medicine_Stock)")
+            cols = [c[1] for c in cursor.fetchall()]
+            
+            if "min_qty" in cols:
+                cursor.execute("SELECT COUNT(*) FROM Medicine_Stock WHERE quantity <= min_qty")
+            else:
+                cursor.execute("SELECT COUNT(*) FROM Medicine_Stock WHERE quantity < 10")
+                
             low_count = cursor.fetchone()[0]
             self.update_card(self.card_stock, str(low_count), "Items to Order")
-        except: pass
+        except Exception as e:
+            print(f"Low Stock Query Error: {e}")
 
-        # 4. Expiry
+        # 4. Expiry Check (Handling MM/YY format accurately)
         try:
-            threshold = (today + datetime.timedelta(days=30)).strftime("%Y-%m-%d")
-            cursor.execute("SELECT Count(*) FROM Medicine WHERE EXP_Date <= ? AND EXP_Date >= ?", (threshold, today_str))
-            exp_count = cursor.fetchone()[0]
+            cursor.execute("SELECT exp_date FROM Medicine_Stock")
+            exp_count = 0
+            for row in cursor.fetchall():
+                exp = row[0]
+                if not exp: continue
+                
+                days_left = 999
+                if "/" in exp: # Handle MM/YY
+                    try:
+                        m, y = map(int, exp.split('/'))
+                        exp_dt = datetime.date(2000 + y, m, 1)
+                        days_left = (exp_dt - today).days
+                    except: pass
+                else: # Handle YYYY-MM-DD
+                    try:
+                        exp_dt = datetime.datetime.strptime(exp, "%Y-%m-%d").date()
+                        days_left = (exp_dt - today).days
+                    except: pass
+                
+                if days_left <= 30: # If expiring within 30 days
+                    exp_count += 1
+                    
             self.update_card(self.card_expiry, str(exp_count), "Critical Items")
-        except: pass
+        except Exception as e:
+            print(f"Expiry Query Error: {e}")
 
         # 5. Chart Data (Last 7 Days)
         dates = []
@@ -216,7 +245,6 @@ class DashboardInterface(QWidget):
         for i in reversed(range(self.activity_list_layout.count())): 
             self.activity_list_layout.itemAt(i).widget().setParent(None)
 
-        # --- FIX: Changed 'patient' to 'patient_name' to match new DB schema ---
         try:
             cursor.execute("SELECT Bill_id, patient_name, total_sum, bill_date FROM Bill ORDER BY Bill_id DESC LIMIT 10")
             rows = cursor.fetchall()
@@ -256,7 +284,7 @@ class MplCanvas(FigureCanvas):
     def __init__(self, parent=None, width=5, height=4, dpi=100):
         fig = Figure(figsize=(width, height), dpi=dpi)
         self.axes = fig.add_subplot(111)
-        fig.subplots_adjust(left=0.1, right=0.95, top=0.9, bottom=0.15)
+        fig.subplots_adjust(left=0.15, right=0.95, top=0.9, bottom=0.15) # Adjusted margins to ensure labels fit
         super(MplCanvas, self).__init__(fig)
 
 if __name__ == "__main__":
