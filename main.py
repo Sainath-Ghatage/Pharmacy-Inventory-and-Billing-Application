@@ -22,7 +22,7 @@ from orders import OrdersInterface
 from purchase_entry import PurchaseEntryInterface 
 from partner_management import PartnerManagementInterface
 from accounts import AccountsInterface
-from purchase_return import PurchaseReturnInterface # <--- NEW IMPORT
+from purchase_return import PurchaseReturnInterface
 
 # ---------- COLORS ----------
 COLOR_NAVBAR = "#0d47a1"   # Deep Blue
@@ -109,7 +109,7 @@ class ToastNotification(QWidget):
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.close_notification)
-        self.timer.start(5000) 
+        self.timer.start(6000) # Increased duration slightly to 6 seconds
 
     def show_animation(self):
         self.opacity_effect = QGraphicsOpacityEffect(self.container)
@@ -179,7 +179,8 @@ class MainWindow(QWidget):
 
         # --- SETUP NOTIFICATIONS ---
         self.notify_manager = NotificationManager(self)
-        QTimer.singleShot(2000, self.perform_calculations_and_notify)
+        # Increased initial delay to 3500ms to guarantee window is fully painted and visible before querying
+        QTimer.singleShot(3500, self.perform_calculations_and_notify) 
 
     def init_ui(self):
         main_layout = QHBoxLayout(self)
@@ -242,7 +243,7 @@ class MainWindow(QWidget):
         add_header("Inventory && Procurement")
         add_nav_btn("Inventory", "Medicine Stock")
         add_nav_btn("Purchase Entry", "Purchase Invoice") 
-        add_nav_btn("Purchase Returns", "Purchase Returns") # <--- ADDED BUTTON
+        add_nav_btn("Purchase Returns", "Purchase Returns")
         add_nav_btn("Orders", "Purchase Orders")
         
         # 3. RECORDS
@@ -324,7 +325,7 @@ class MainWindow(QWidget):
         self.orders_page = OrdersInterface()
         self.pharma_page = PharmacyDetailsInterface()
         self.purchase_page = PurchaseEntryInterface() 
-        self.purchase_return_page = PurchaseReturnInterface() # <--- INSTANTIATE NEW PAGE
+        self.purchase_return_page = PurchaseReturnInterface() 
         self.partner_page = PartnerManagementInterface()
         self.accounts_page = AccountsInterface() 
 
@@ -349,7 +350,7 @@ class MainWindow(QWidget):
             "Orders": self.orders_page,
             "Pharmacy": self.pharma_page,
             "Purchase Entry": self.purchase_page,
-            "Purchase Returns": self.purchase_return_page, # <--- ADD TO MAP
+            "Purchase Returns": self.purchase_return_page, 
             "Partners": self.partner_page,
             "Accounts": self.accounts_page 
         }
@@ -372,7 +373,6 @@ class MainWindow(QWidget):
             
             # ==========================================
             # SMART LAZY REFRESH LOGIC
-            # Instantly fetch fresh data when a tab is opened
             # ==========================================
             try:
                 if name == "Dashboard":
@@ -409,7 +409,6 @@ class MainWindow(QWidget):
                         self.orders_page.load_history()
                         
                 elif name == "Partners":
-                    # Refresh all three partner tabs
                     if hasattr(self.partner_page, 'tab_customer'):
                         self.partner_page.tab_customer.load_data()
                         self.partner_page.tab_doctor.load_data()
@@ -421,9 +420,7 @@ class MainWindow(QWidget):
             except Exception as e:
                 print(f"Error refreshing page '{name}': {e}")
             
-            # ==========================================
             # Update visual state of sidebar buttons
-            # ==========================================
             for btn_name, btn in self.nav_buttons.items():
                 is_active = (btn_name == name)
                 btn.setStyleSheet(self.get_btn_style(is_active))
@@ -440,20 +437,32 @@ class MainWindow(QWidget):
             self.notify_manager.reposition()
         super().resizeEvent(event)
 
- # --- NOTIFICATIONS ---
+    # --- NOTIFICATIONS ---
     def perform_calculations_and_notify(self):
         conn = database.get_connection()
         if not conn: return
         cursor = conn.cursor()
 
         try:
-            # 1. Low Stock Check (Join Details with Stock)
-            cursor.execute("""
-                SELECT d.med_name 
-                FROM Medicine_Details d
-                JOIN Medicine_Stock s ON d.med_id = s.med_id
-                WHERE s.quantity < 10
-            """)
+            # 1. Low Stock Check (Dynamically checks min_qty)
+            cursor.execute("PRAGMA table_info(Medicine_Stock)")
+            cols = [c[1] for c in cursor.fetchall()]
+            
+            if "min_qty" in cols:
+                cursor.execute("""
+                    SELECT d.med_name 
+                    FROM Medicine_Details d
+                    JOIN Medicine_Stock s ON d.med_id = s.med_id
+                    WHERE s.quantity <= s.min_qty
+                """)
+            else:
+                cursor.execute("""
+                    SELECT d.med_name 
+                    FROM Medicine_Details d
+                    JOIN Medicine_Stock s ON d.med_id = s.med_id
+                    WHERE s.quantity < 10
+                """)
+                
             low_rows = cursor.fetchall()
             if low_rows:
                 count = len(low_rows)
@@ -461,10 +470,8 @@ class MainWindow(QWidget):
                 msg = f"{name} and {count-1} others are running low." if count > 1 else f"{name} is running low."
                 self.notify_manager.show_toast("Stock Alert", msg, "warning")
 
-            # 2. Expiry Alert (Handling MM/YY format)
-            today = datetime.datetime.now()
-            today_month = today.month
-            today_year = int(today.strftime("%y")) # e.g., 24
+            # 2. Expiry Alert (Robust Check for MM/YY and YYYY-MM-DD)
+            today = datetime.datetime.now().date()
 
             cursor.execute("""
                 SELECT d.med_name, s.exp_date 
@@ -477,24 +484,29 @@ class MainWindow(QWidget):
             exp_name = ""
 
             for name, exp_str in all_stock:
-                if not exp_str or "/" not in exp_str: continue
+                if not exp_str: continue # Skip if no expiry given
                 
+                days_left = 9999
                 try:
-                    m_str, y_str = exp_str.split("/")
-                    exp_month = int(m_str)
-                    exp_year = int(y_str)
+                    if "/" in exp_str:
+                        m_str, y_str = exp_str.split("/")
+                        # Convert YY to YYYY
+                        y_int = int(y_str)
+                        if y_int < 100: y_int += 2000
+                        exp_dt = datetime.date(y_int, int(m_str), 1)
+                        days_left = (exp_dt - today).days
+                    elif "-" in exp_str:
+                        # Parse YYYY-MM-DD
+                        exp_dt = datetime.datetime.strptime(exp_str, "%Y-%m-%d").date()
+                        days_left = (exp_dt - today).days
+                except Exception as parse_err:
+                    print(f"Date Parse Error on {exp_str}: {parse_err}")
+                    continue
 
-                    if exp_year < today_year:
-                        is_near_expiry = True
-                    elif exp_year == today_year and exp_month <= (today_month + 1):
-                        is_near_expiry = True
-                    else:
-                        is_near_expiry = False
-
-                    if is_near_expiry:
-                        exp_count += 1
-                        if not exp_name: exp_name = name
-                except: continue
+                # 60 Days Threshold for "Expiring Soon"
+                if days_left <= 60:
+                    exp_count += 1
+                    if not exp_name: exp_name = name
 
             if exp_count > 0:
                 msg = f"{exp_name} and {exp_count-1} others expiring soon (or expired)." if exp_count > 1 else f"{exp_name} is expiring soon."

@@ -9,13 +9,15 @@ from PyQt6.QtWidgets import (
     QMessageBox, QFileDialog, QAbstractItemView, QSizePolicy
 )
 from PyQt6.QtCore import Qt, QDate
-from PyQt6.QtGui import QColor, QFont
+from PyQt6.QtGui import QColor, QFont, QBrush
 
 # --- MATPLOTLIB ---
 import matplotlib
 matplotlib.use('QtAgg') 
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
+import matplotlib.ticker as ticker
+import matplotlib.dates as mdates # NEW: For smart date formatting
 
 import database
 
@@ -26,6 +28,7 @@ COLOR_NAVBAR = "#0d47a1"
 COLOR_SIDEBAR = "#e9ecef"
 COLOR_TEXT = "#212529"
 COLOR_ACCENT = "#198754"
+COLOR_TOTAL_ROW = "#e7f1ff"
 
 class ReportsInterface(QWidget):
     def __init__(self):
@@ -34,8 +37,8 @@ class ReportsInterface(QWidget):
         self.setStyleSheet(f"""
             QWidget {{ background-color: {COLOR_BG}; font-family: 'Segoe UI', sans-serif; color: {COLOR_TEXT}; }}
             QTableWidget {{ background-color: white; border: 1px solid #ccc; gridline-color: #f0f0f0; color: {COLOR_TEXT}; }}
-            QTableWidget::item {{ padding: 5px; }}
-            QHeaderView::section {{ background-color: #f1f3f4; padding: 8px; border: none; border-bottom: 1px solid #ccc; font-weight: bold; font-size: 12px; color: {COLOR_TEXT}; }}
+            QTableWidget::item {{ padding: 6px; }}
+            QHeaderView::section {{ background-color: #f1f3f4; padding: 10px; border: none; border-bottom: 2px solid #ccc; font-weight: bold; font-size: 13px; color: {COLOR_TEXT}; }}
             QTreeWidget {{ border: 1px solid #ccc; background-color: {COLOR_WHITE}; border-radius: 4px; color: {COLOR_TEXT}; }}
             QTreeWidget::item {{ padding: 6px; }}
             QTreeWidget::item:selected {{ background-color: {COLOR_NAVBAR}; color: white; }}
@@ -56,7 +59,7 @@ class ReportsInterface(QWidget):
         main_layout.setSpacing(0)
 
         # ==========================================
-        # 1. LEFT SIDEBAR (REPORT NAVIGATION)
+        # 1. LEFT SIDEBAR
         # ==========================================
         sidebar_frame = QFrame()
         sidebar_frame.setFixedWidth(260)
@@ -71,9 +74,8 @@ class ReportsInterface(QWidget):
         self.tree = QTreeWidget()
         self.tree.setHeaderHidden(True)
         
-        # --- POPULATE TREE ---
         self.add_tree_item("Sales Reports", [
-            "Daily Sales Journal", "Sundry Sales Details", "Customer/Patient Sales", 
+            "Daily Sales Journal", "Customer/Patient Sales", 
             "Doctor Wise Sales", "Product Wise Sales"
         ])
         
@@ -88,7 +90,7 @@ class ReportsInterface(QWidget):
         ])
 
         self.add_tree_item("Financial Reports", [
-            "Profit & Loss (Approx)", "Balance Sheet (Approx)"
+            "Profit & Loss (Approx)"
         ])
         
         self.add_tree_item("Visual Analytics", [
@@ -122,14 +124,14 @@ class ReportsInterface(QWidget):
         
         # Date Filters
         self.lbl_from = QLabel("From:")
-        self.lbl_from.setStyleSheet(f"color: {COLOR_TEXT};")
+        self.lbl_from.setStyleSheet(f"color: {COLOR_TEXT}; font-weight: bold;")
         self.date_from = QDateEdit(QDate.currentDate().addDays(-30))
         self.date_from.setCalendarPopup(True)
         self.date_from.setStyleSheet(self.input_style())
         self.date_from.dateChanged.connect(self.generate_report)
         
         self.lbl_to = QLabel("To:")
-        self.lbl_to.setStyleSheet(f"color: {COLOR_TEXT};")
+        self.lbl_to.setStyleSheet(f"color: {COLOR_TEXT}; font-weight: bold;")
         self.date_to = QDateEdit(QDate.currentDate())
         self.date_to.setCalendarPopup(True)
         self.date_to.setStyleSheet(self.input_style())
@@ -142,7 +144,7 @@ class ReportsInterface(QWidget):
 
         content_layout.addWidget(filter_frame)
 
-        # --- B. VIEW STACK (Table vs Graph) ---
+        # --- B. VIEW STACK ---
         self.stack = QStackedWidget()
         
         # 1. Table View
@@ -153,12 +155,11 @@ class ReportsInterface(QWidget):
         self.stack.addWidget(self.table)
         
         # 2. Graph View
-        self.canvas = MplCanvas(self, width=5, height=4, dpi=120) 
+        self.canvas = MplCanvas(self, width=6, height=4, dpi=120) 
         self.stack.addWidget(self.canvas)
         
         content_layout.addWidget(self.stack)
         
-        # Wrap content
         content_widget = QWidget()
         content_widget.setLayout(content_layout)
         main_layout.addWidget(content_widget)
@@ -173,7 +174,7 @@ class ReportsInterface(QWidget):
         self.tree.addTopLevelItem(parent)
 
     def input_style(self):
-        return f"border: 1px solid #ced4da; padding: 5px; border-radius: 4px; background: white; color: black; min-width: 100px;"
+        return f"border: 1px solid #ced4da; padding: 5px; border-radius: 4px; background: white; color: black; min-width: 110px;"
 
     def on_report_selected(self):
         item = self.tree.currentItem()
@@ -182,11 +183,10 @@ class ReportsInterface(QWidget):
         report_name = item.text(0)
         self.lbl_report_title.setText(report_name)
         
-        # Show/Hide Date Filters
         is_date_relevant = report_name in [
-            "Daily Sales Journal", "Sundry Sales Details", "Customer/Patient Sales", 
+            "Daily Sales Journal", "Customer/Patient Sales", 
             "Doctor Wise Sales", "Product Wise Sales", 
-            "Slow Moving Products", "Purchase Returns Details", # <--- NEWLY ADDED TO FILTER LIST
+            "Slow Moving Products", "Purchase Returns Details",
             "Daily Sales Graph", "Monthly Sales Graph", "Profit & Loss (Approx)"
         ]
         
@@ -195,7 +195,6 @@ class ReportsInterface(QWidget):
         self.lbl_to.setVisible(is_date_relevant)
         self.date_to.setVisible(is_date_relevant)
         
-        # Switch View
         if "Graph" in report_name:
             self.stack.setCurrentWidget(self.canvas)
         else:
@@ -226,17 +225,6 @@ class ReportsInterface(QWidget):
                 """
                 self.run_table_query(cursor, query, (d_from, d_to), 
                                      ["Date", "Bill #", "Patient", "Doctor", "Pay Mode", "Amount"])
-
-            elif report_name == "Sundry Sales Details":
-                query = """
-                    SELECT b.bill_date, b.Bill_id, m.med_name, bi.quantity, bi.unit_price, bi.total_price 
-                    FROM Bill_Item bi 
-                    JOIN Bill b ON bi.Bill_id = b.Bill_id
-                    JOIN Medicine_Details m ON bi.Med_id = m.med_id
-                    WHERE date(b.bill_date) BETWEEN ? AND ?
-                """
-                self.run_table_query(cursor, query, (d_from, d_to), 
-                                     ["Date", "Bill #", "Item", "Qty", "Rate", "Total"])
 
             elif report_name == "Customer/Patient Sales":
                 query = """
@@ -315,9 +303,7 @@ class ReportsInterface(QWidget):
                 """
                 self.run_table_query(cursor, query, None, ["Supplier", "Medicine", "Total Purchased Qty"])
 
-            # --- UPDATED SLOW MOVING REPORT ---
             elif report_name == "Slow Moving Products":
-                # Now accepts the Date range and shows products that sold 10 units or less (including 0)
                 query = """
                     SELECT m.med_name, m.type, IFNULL(SUM(bi.quantity), 0) as sold_qty
                     FROM Medicine_Details m
@@ -327,25 +313,22 @@ class ReportsInterface(QWidget):
                     HAVING sold_qty <= 10
                     ORDER BY sold_qty ASC
                 """
-                self.run_table_query(cursor, query, (d_from, d_to), ["Medicine", "Type", "Units Sold (Within Date Range)"])
+                self.run_table_query(cursor, query, (d_from, d_to), ["Medicine", "Type", "Units Sold (Within Range)"])
 
-            # --- UPDATED EXCESS STOCK REPORT ---
             elif report_name == "Excess Stock (>100)":
-                # Now explicitly includes the raw unit stock amount in the table
                 query = """
                     SELECT d.med_name, 
                            CASE WHEN d.tabs_per_strip > 1 THEN 
                                (CAST(SUM(s.quantity) AS INTEGER) / d.tabs_per_strip) || 's + ' || (CAST(SUM(s.quantity) AS INTEGER) % d.tabs_per_strip) || 't'
                            ELSE 
                                SUM(s.quantity) || ' Units'
-                           END,
-                           SUM(s.quantity)
+                           END
                     FROM Medicine_Stock s 
                     JOIN Medicine_Details d ON s.med_id = d.med_id 
                     GROUP BY d.med_id HAVING SUM(s.quantity) > 100
                     ORDER BY SUM(s.quantity) DESC
                 """
-                self.run_table_query(cursor, query, None, ["Medicine", "Display Qty (Strips)", "Raw Unit Stock"])
+                self.run_table_query(cursor, query, None, ["Medicine", "Stock Qty (Strips + Loose)"], show_total=False)
 
             elif report_name == "Fast Moving (Non-Stop)":
                  query = """
@@ -356,7 +339,6 @@ class ReportsInterface(QWidget):
                 """
                  self.run_table_query(cursor, query, None, ["Medicine", "Sales Frequency"])
 
-            # --- NEW: PURCHASE RETURNS LOGIC ---
             elif report_name == "Purchase Returns Details":
                  query = """
                     SELECT date(pr.return_date), pr.return_number, s.Sup_name, m.med_name, pri.return_qty, pri.return_amount
@@ -367,7 +349,7 @@ class ReportsInterface(QWidget):
                     WHERE date(pr.return_date) BETWEEN ? AND ?
                     ORDER BY pr.return_date DESC
                  """
-                 self.run_table_query(cursor, query, (d_from, d_to), ["Return Date", "Debit Note #", "Supplier", "Returned Medicine", "Qty Returned", "Amount (₹)"])
+                 self.run_table_query(cursor, query, (d_from, d_to), ["Return Date", "Debit Note #", "Supplier", "Returned Medicine", "Qty Returned", "Return Amount"])
 
             # === FINANCIALS ===
             elif report_name == "Profit & Loss (Approx)":
@@ -399,25 +381,7 @@ class ReportsInterface(QWidget):
                     ["Expense", "Operational Expenses", f"(₹{expenses:.2f})"],
                     ["Result", "NET PROFIT", f"₹{net:.2f}"]
                 ]
-                self.populate_table(["Category", "Description", "Amount"], data)
-
-            elif report_name == "Balance Sheet (Approx)":
-                cursor.execute("SELECT SUM(quantity * purchase_rate) FROM Medicine_Stock")
-                stock_val = cursor.fetchone()[0] or 0
-                
-                cursor.execute("SELECT SUM(balance) FROM Supplier")
-                supp_dues = cursor.fetchone()[0] or 0
-                
-                cursor.execute("SELECT SUM(balance) FROM Customer")
-                cust_dues = cursor.fetchone()[0] or 0
-                
-                data = [
-                    ["Asset", "Closing Stock Value", f"₹{stock_val:.2f}"],
-                    ["Asset", "Customer Receivables", f"₹{cust_dues:.2f}"],
-                    ["Liability", "Supplier Payables", f"₹{supp_dues:.2f}"],
-                    ["Equity", "Estimated Equity", f"₹{stock_val + cust_dues - supp_dues:.2f}"]
-                ]
-                self.populate_table(["Type", "Account", "Amount"], data)
+                self.populate_table(["Category", "Description", "Amount"], data, show_total=False)
 
             # === GRAPHS ===
             elif report_name == "Daily Sales Graph":
@@ -431,52 +395,99 @@ class ReportsInterface(QWidget):
         finally:
             conn.close()
 
-    def run_table_query(self, cursor, query, params, headers):
+    def run_table_query(self, cursor, query, params, headers, show_total=True):
         if params:
             cursor.execute(query, params)
         else:
             cursor.execute(query)
         rows = cursor.fetchall()
-        self.populate_table(headers, rows)
+        self.populate_table(headers, rows, show_total=show_total)
 
-    def populate_table(self, headers, rows):
+    def populate_table(self, headers, rows, show_total=True):
         self.table.setColumnCount(len(headers))
         self.table.setHorizontalHeaderLabels(headers)
         self.table.setRowCount(0)
         
+        column_sums = [0.0] * len(headers)
+        is_numeric_col = [False] * len(headers)
+        sum_keywords = ['amount', 'total', 'revenue', 'spent', 'qty', 'purchased']
+
         for i, row in enumerate(rows):
             self.table.insertRow(i)
             for j, val in enumerate(row):
-                item = QTableWidgetItem(str(val) if val is not None else "")
+                str_val = str(val) if val is not None else ""
+                item = QTableWidgetItem(str_val)
                 
-                # Align numbers right, text left
-                if str(val).replace('.', '', 1).isdigit() or "₹" in str(val):
+                if str_val.replace('.', '', 1).isdigit() or "₹" in str_val:
                     item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                    clean_val = str_val.replace('₹', '').replace(',', '').replace('(', '-').replace(')', '').strip()
+                    try:
+                        column_sums[j] += float(clean_val)
+                        is_numeric_col[j] = True
+                    except ValueError:
+                        pass
                 else:
                     item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
                 
                 self.table.setItem(i, j, item)
         
+        # APPEND 'TOTAL AMOUNT' ROW
+        if rows and show_total:
+            font_bold = QFont()
+            font_bold.setBold(True)
+            font_bold.setPointSize(10)
+            
+            total_row_idx = self.table.rowCount()
+            self.table.insertRow(total_row_idx)
+            
+            for j, h_text in enumerate(headers):
+                h_lower = h_text.lower()
+                should_sum = any(k in h_lower for k in sum_keywords)
+                
+                if j == 0:
+                    item = QTableWidgetItem("TOTAL :")
+                    item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                elif should_sum and is_numeric_col[j]:
+                    if "₹" in str(rows[0][j]) or any(c in h_lower for c in ['amount', 'total', 'revenue', 'spent']):
+                        item = QTableWidgetItem(f"₹ {column_sums[j]:,.2f}")
+                    else:
+                        if column_sums[j].is_integer():
+                            item = QTableWidgetItem(f"{int(column_sums[j])}")
+                        else:
+                            item = QTableWidgetItem(f"{column_sums[j]:.2f}")
+                    item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                else:
+                    item = QTableWidgetItem("")
+
+                item.setFont(font_bold)
+                item.setBackground(QBrush(QColor(COLOR_TOTAL_ROW)))
+                self.table.setItem(total_row_idx, j, item)
+
         # SMART COLUMN RESIZING
         header = self.table.horizontalHeader()
-        
         has_stretch = False
+        
         for i, h_text in enumerate(headers):
-            h_text_lower = h_text.lower()
-            # If column is descriptive, Stretch it
-            if any(x in h_text_lower for x in ['name', 'item', 'description', 'patient', 'doctor', 'medicine', 'supplier']):
+            h_lower = h_text.lower()
+            if any(x in h_lower for x in ['name', 'item', 'description', 'patient', 'doctor', 'medicine', 'supplier', 'category']):
                 header.setSectionResizeMode(i, QHeaderView.ResizeMode.Stretch)
                 has_stretch = True
             else:
                 header.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
         
-        # Ensure at least one column stretches if none found
         if not has_stretch and self.table.columnCount() > 0:
             header.setSectionResizeMode(self.table.columnCount()-1, QHeaderView.ResizeMode.Stretch)
 
-    # --- PLOTTING FUNCTIONS ---
+    # ==========================================
+    # --- ENHANCED MODERN PLOTTING FUNCTIONS ---
+    # ==========================================
     def plot_daily_sales(self, cursor, d_from, d_to):
         self.canvas.axes.clear()
+        
+        # Set background colors to match app perfectly
+        self.canvas.figure.patch.set_facecolor(COLOR_WHITE)
+        self.canvas.axes.set_facecolor(COLOR_WHITE)
+        
         cursor.execute("""
             SELECT date(bill_date), SUM(total_sum) FROM Bill 
             WHERE date(bill_date) BETWEEN ? AND ? 
@@ -484,24 +495,63 @@ class ReportsInterface(QWidget):
         """, (d_from, d_to))
         rows = cursor.fetchall()
         
-        dates = [r[0] for r in rows]
+        if not rows:
+            self.canvas.axes.text(0.5, 0.5, "No Data Available in this date range", 
+                                  ha='center', va='center', fontsize=12, color='#6c757d')
+            self.canvas.draw()
+            return
+
+        # Convert string dates to actual datetime objects for smart spacing
+        dates = [datetime.datetime.strptime(r[0], "%Y-%m-%d").date() for r in rows]
         values = [r[1] for r in rows]
         
-        self.canvas.axes.plot(dates, values, marker='o', linestyle='-', color='#0d47a1', linewidth=2)
-        self.canvas.axes.set_title("Daily Sales Trend", fontsize=12, fontweight='bold')
-        self.canvas.axes.set_ylabel("Sales (₹)")
-        self.canvas.axes.tick_params(axis='x', rotation=30)
-        self.canvas.axes.grid(True, linestyle='--', alpha=0.5)
+        color_line = '#2563eb' # Modern Bootstrap Blue
+        color_fill = '#bfdbfe'
         
-        # Add values on top of points
-        for x, y in zip(dates, values):
-            self.canvas.axes.text(x, y, f"{int(y)}", ha='center', va='bottom', fontsize=9)
+        # Plot Line
+        self.canvas.axes.plot(dates, values, marker='o', linestyle='-', color=color_line, 
+                              linewidth=3, markersize=7, markerfacecolor='white', markeredgewidth=2)
+        # Plot Fill Underneath
+        self.canvas.axes.fill_between(dates, values, color=color_fill, alpha=0.4) 
+        
+        # Styling Titles & Labels
+        self.canvas.axes.set_title("Daily Sales Trend", fontsize=15, fontweight='bold', color='#1f2937', pad=20)
+        self.canvas.axes.set_ylabel("Sales Revenue", fontsize=10, fontweight='bold', color='#6b7280')
+        
+        # Clean up Axes
+        self.canvas.axes.tick_params(axis='x', colors='#4b5563', labelsize=9)
+        self.canvas.axes.tick_params(axis='y', colors='#4b5563', labelsize=9, length=0) # Hide Y ticks
+        
+        # Smart Date Formatter on X-Axis (E.g., "Feb 15")
+        self.canvas.axes.xaxis.set_major_formatter(mdates.DateFormatter('%b %d'))
+        self.canvas.figure.autofmt_xdate(rotation=30) # Auto rotate dates nicely
+        
+        # Format Y axis as currency
+        self.canvas.axes.yaxis.set_major_formatter(ticker.StrMethodFormatter('₹ {x:,.0f}'))
+        
+        # Clean Grid and Spines (Remove all borders except bottom)
+        self.canvas.axes.grid(axis='y', linestyle='-', alpha=0.3, color='#9ca3af')
+        self.canvas.axes.spines['top'].set_visible(False)
+        self.canvas.axes.spines['right'].set_visible(False)
+        self.canvas.axes.spines['left'].set_visible(False)
+        self.canvas.axes.spines['bottom'].set_color('#d1d5db')
+        
+        # Only show text labels if there aren't too many points (prevents clutter)
+        if len(dates) <= 15:
+            max_val = max(values) if values else 1
+            for x, y in zip(dates, values):
+                self.canvas.axes.text(x, y + (max_val*0.03), f"₹{int(y):,}", 
+                                      ha='center', va='bottom', fontsize=9, color=color_line, fontweight='bold')
             
         self.canvas.figure.tight_layout()
         self.canvas.draw()
 
     def plot_monthly_sales(self, cursor, year):
         self.canvas.axes.clear()
+        
+        self.canvas.figure.patch.set_facecolor(COLOR_WHITE)
+        self.canvas.axes.set_facecolor(COLOR_WHITE)
+        
         cursor.execute("""
             SELECT strftime('%m', bill_date), SUM(total_sum) 
             FROM Bill WHERE strftime('%Y', bill_date) = ? 
@@ -513,17 +563,36 @@ class ReportsInterface(QWidget):
         months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
         values = [data.get(i+1, 0) for i in range(12)]
         
-        bars = self.canvas.axes.bar(months, values, color='#198754', alpha=0.8)
-        self.canvas.axes.set_title(f"Monthly Sales - {year}", fontsize=12, fontweight='bold')
-        self.canvas.axes.set_ylabel("Sales (₹)")
-        self.canvas.axes.grid(axis='y', linestyle='--', alpha=0.5)
+        color_bar = '#10b981' # Modern Emerald Green
         
-        # Add values on bars
+        # Bar plotting 
+        bars = self.canvas.axes.bar(months, values, color=color_bar, alpha=0.9, width=0.55)
+        
+        # Styling
+        self.canvas.axes.set_title(f"Monthly Revenue - {year}", fontsize=15, fontweight='bold', color='#1f2937', pad=20)
+        self.canvas.axes.set_ylabel("Sales Revenue", fontsize=10, fontweight='bold', color='#6b7280')
+        
+        # Clean up Axes
+        self.canvas.axes.tick_params(axis='x', colors='#4b5563', labelsize=10)
+        self.canvas.axes.tick_params(axis='y', colors='#4b5563', labelsize=9, length=0)
+        
+        # Format Y axis as currency
+        self.canvas.axes.yaxis.set_major_formatter(ticker.StrMethodFormatter('₹ {x:,.0f}'))
+
+        # Clean Grid and Spines
+        self.canvas.axes.grid(axis='y', linestyle='-', alpha=0.3, color='#9ca3af')
+        self.canvas.axes.spines['top'].set_visible(False)
+        self.canvas.axes.spines['right'].set_visible(False)
+        self.canvas.axes.spines['left'].set_visible(False)
+        self.canvas.axes.spines['bottom'].set_color('#d1d5db')
+        
+        # Add text labels on bars
+        max_val = max(values) if values else 1
         for bar in bars:
             height = bar.get_height()
             if height > 0:
-                self.canvas.axes.text(bar.get_x() + bar.get_width()/2, height, f"{int(height)}", 
-                                      ha='center', va='bottom', fontsize=9)
+                self.canvas.axes.text(bar.get_x() + bar.get_width()/2, height + (max_val*0.015), f"₹{int(height):,}", 
+                                      ha='center', va='bottom', fontsize=9, color='#047857', fontweight='bold')
                                       
         self.canvas.figure.tight_layout()
         self.canvas.draw()

@@ -32,7 +32,22 @@ GLOBAL_STYLE = """
     }
     QTableWidget { background-color: white; color: black; gridline-color: #ccc; selection-background-color: #e3f2fd; selection-color: black; }
     QHeaderView::section { background-color: #e0e0e0; color: black; padding: 5px; border: 1px solid #ccc; font-weight: bold; }
-    QListWidget { background-color: white; color: black; }
+    
+    /* FIX: Make the list widget text larger and padded */
+    QListWidget { 
+        background-color: white; 
+        color: black; 
+        font-size: 14px; 
+    }
+    QListWidget::item {
+        padding: 8px;
+        border-bottom: 1px solid #eee;
+    }
+    QListWidget::item:selected {
+        background-color: #e3f2fd;
+        color: black;
+    }
+    
     QPushButton { color: white; }
     
     /* POPUP FIXES */
@@ -133,8 +148,13 @@ class SingleBillTab(QWidget):
 
         self.table = QTableWidget()
         self.table.setColumnCount(9)
-        self.table.setHorizontalHeaderLabels(["Medicine", "Batch", "Exp", "Qty", "Rate", "GST", "Disc", "Total", "Del"])
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.table.setHorizontalHeaderLabels(["Medicine Name", "Batch", "Exp", "Qty", "Rate", "GST", "Disc", "Total", "Del"])
+        
+        # --- FIX: Ensure the table is scrollable and column 0 isn't squeezed ---
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents) # Allows Name to expand
+        self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.setMinimumWidth(600) # Ensure table takes space
+        
         self.table.setColumnWidth(8, 40)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -170,6 +190,9 @@ class SingleBillTab(QWidget):
             self.pat_completer.model().setStringList(self.customer_names)
             self.doc_completer.model().setStringList(self.doctor_names)
         finally: conn.close()
+        
+        # --- NEW: Refresh the medicine search list to show updated stock instantly ---
+        self.search_medicine(self.search_input.text())
 
     def search_medicine(self, text):
         self.match_list.clear()
@@ -339,8 +362,17 @@ class SingleBillTab(QWidget):
         try: total = float(self.lbl_grand_total.text().replace("Total: ₹", ""))
         except: return
         
-        paid = self.spin_paid.value(); credit = total - paid
-        pat = self.inp_patient.text().strip() or "Walk-in"; doc = self.inp_doctor.text().strip()
+        paid = self.spin_paid.value()
+        credit = total - paid
+        pat_input = self.inp_patient.text().strip()
+        
+        # --- Check if balance is 1 Rupee or more, AND patient name is empty ---
+        if credit >= 1.0 and not pat_input:
+            QMessageBox.warning(self, "Patient Name Required", "Balance cannot be credited as the patient name is not inserted.")
+            return
+
+        pat = pat_input or "Walk-in"
+        doc = self.inp_doctor.text().strip()
         
         conn = database.get_connection(); cursor = conn.cursor()
         try:
@@ -350,7 +382,7 @@ class SingleBillTab(QWidget):
                 cursor.execute("SELECT Med_id, quantity FROM Bill_Item WHERE Bill_id=?", (self.editing_bill_id,))
                 old_items = cursor.fetchall()
                 for mid, qty in old_items:
-                    cursor.execute("UPDATE Medicine_Stock SET quantity = quantity + ? WHERE med_id=?", (qty, mid)) # Simplified restoration
+                    cursor.execute("UPDATE Medicine_Stock SET quantity = quantity + ? WHERE med_id=?", (qty, mid))
                 
                 # 2. Adjust Customer Balance (Reverse old credit)
                 cursor.execute("SELECT balance, total_sum, paid_amount FROM Bill WHERE Bill_id=?", (self.editing_bill_id,))
@@ -392,30 +424,159 @@ class SingleBillTab(QWidget):
         finally: conn.close()
 
     def print_receipt(self, bid, pat, doc, total, paid, bal):
-        conn = database.get_connection(); cur = conn.cursor()
-        cur.execute("SELECT p_name, phone, email, location, GSTIN FROM Pharmacy LIMIT 1")
-        ph = cur.fetchone(); conn.close()
+        conn = database.get_connection()
+        cur = conn.cursor()
         
-        shop = ph[0] if ph else "PHARMACY"; addr = ph[3] if ph else ""; contact = f"Ph: {ph[1]}" if ph else ""
-        gstin = f"<br>GSTIN: {ph[4]}" if ph and ph[4] else ""
+        # --- FETCH PRINTER SETTING FROM DATABASE ---
+        try:
+            # We fetch printer_type along with other details
+            cur.execute("SELECT p_name, phone, email, location, GSTIN, printer_type FROM Pharmacy LIMIT 1")
+            ph = cur.fetchone()
+        except sqlite3.OperationalError:
+            # Fallback in case schema hasn't updated yet
+            cur.execute("SELECT p_name, phone, email, location, GSTIN FROM Pharmacy LIMIT 1")
+            ph = cur.fetchone()
+            ph = ph + ("Thermal Printer (80mm/58mm)",) if ph else None
+            
+        conn.close()
         
-        html = f"""<div style='font-family: Arial; font-size: 12px; color:black;'>
-        <center><h2>{shop}</h2><p>{addr}<br>{contact}{gstin}</p></center><hr>
-        <table width='100%'><tr><td>Bill: {bid}</td><td align='right'>Date: {datetime.datetime.now().strftime('%d/%m/%y')}</td></tr>
-        <tr><td>Pat: {pat}</td><td align='right'>Doc: {doc}</td></tr></table><hr>
-        <table width='100%' cellspacing='0' cellpadding='3'>
-        <tr style='border-bottom:1px solid black;'><td><b>Item</b></td><td><b>Exp</b></td><td><b>Qty</b></td><td><b>GST</b></td><td align='right'><b>Total</b></td></tr>"""
+        shop = ph[0] if ph else "PHARMACY"
+        phone = ph[1] if ph else ""
+        email = ph[2] if ph else ""
+        addr = ph[3] if ph else ""
+        gstin_val = ph[4] if ph else ""
         
+        # Determine printer layout type
+        printer_type = ph[5] if ph and len(ph) > 5 and ph[5] else "Thermal Printer (80mm/58mm)"
+        
+        now_str = datetime.datetime.now().strftime('%d-%m-%Y %H:%M')
+        
+        total_gst_amount = 0.0
+        total_discount_amount = 0.0
+
         for i in self.cart_items:
-            html += f"<tr><td>{i['name']}</td><td>{i['exp']}</td><td>{i['qty_disp']}</td><td>{i['gst']}%</td><td align='right'>{i['total']:.2f}</td></tr>"
+            gst_pct = float(i.get('gst', 0))
+            item_gst_amount = i['total'] - (i['total'] / (1 + (gst_pct / 100)))
+            total_gst_amount += item_gst_amount
+            total_discount_amount += float(i.get('disc', 0))
+
+        if "Thermal" in printer_type:
+            # --- 1. THERMAL PRINTER HTML LAYOUT ---
+            html = f"""
+            <div style='font-family: "Courier New", Courier, monospace; font-size: 12px; color: black; width: 300px; margin: 0 auto;'>
+                <center>
+                    <h2 style='margin: 0; padding: 0;'>{shop}</h2>
+                    <div style='font-size: 11px; margin-top: 5px; line-height: 1.4;'>
+                        {addr}<br>
+                        Phone: {phone}<br>
+                        Email: {email}<br>
+                        GSTIN: {gstin_val}
+                    </div>
+                </center>
+                
+                <hr style='border-top: 1px dashed black; margin: 10px 0;'>
+                
+                <table width='100%' style='font-size: 11px;'>
+                    <tr><td align='left'><b>Bill No:</b> {bid}</td><td align='right'><b>Date:</b> {now_str}</td></tr>
+                    <tr><td align='left'><b>Patient:</b> {pat}</td><td align='right'><b>Doctor:</b> {doc[:15]}</td></tr>
+                </table>
+                
+                <hr style='border-top: 1px dashed black; margin: 10px 0;'>
+                
+                <table width='100%' cellspacing='0' cellpadding='2' style='font-size: 11px; text-align: left;'>
+                    <tr>
+                        <th width='55%' style='border-bottom: 1px solid black;'>Item</th>
+                        <th width='20%' style='border-bottom: 1px solid black;'>Qty</th>
+                        <th width='25%' style='border-bottom: 1px solid black; text-align: right;'>Total</th>
+                    </tr>
+            """
+            for i in self.cart_items:
+                html += f"""
+                    <tr>
+                        <td>{i['name'][:20]}</td>
+                        <td>{i['qty_disp']}</td>
+                        <td align='right'>{i['total']:.2f}</td>
+                    </tr>
+                """
+            html += f"""
+                </table>
+                
+                <hr style='border-top: 1px dashed black; margin: 10px 0;'>
+                
+                <table width='100%' style='font-size: 12px;'>
+                    <tr><td align='right'>GST Amount:</td><td align='right' width='35%'>₹{total_gst_amount:.2f}</td></tr>
+                    <tr><td align='right'>Discount:</td><td align='right'>₹{total_discount_amount:.2f}</td></tr>
+                    <tr><td align='right' style='font-size: 14px;'><b>Grand Total:</b></td><td align='right' style='font-size: 14px;'><b>₹{total:.2f}</b></td></tr>
+                </table>
+                
+                <hr style='border-top: 1px dashed black; margin: 10px 0;'>
+                <center><i style='font-size: 11px;'>Thank You! Wishing you a speedy recovery.</i></center>
+            </div>
+            """
+            
+        else:
+            # --- 2. LASER / INKJET (A4) PRINTER HTML LAYOUT ---
+            contact_str = f"Ph: {phone}" if phone else ""
+            email_str = f" | Email: {email}" if email else ""
+            gstin_str = f"<br>GSTIN: {gstin_val}" if gstin_val else ""
+            
+            html = f"""<div style='font-family: Arial, sans-serif; font-size: 13px; color:black;'>
+            <center>
+                <h2>{shop}</h2>
+                <p style='margin: 0;'>{addr}<br>{contact_str}{email_str}{gstin_str}</p>
+            </center><hr>
+            
+            <table width='100%' style='margin-bottom: 10px;'>
+                <tr><td><b>Bill No:</b> {bid}</td><td align='right'><b>Date:</b> {now_str}</td></tr>
+                <tr><td><b>Patient:</b> {pat}</td><td align='right'><b>Doctor:</b> {doc}</td></tr>
+            </table>
+            
+            <table width='100%' cellspacing='0' cellpadding='5' border='1' style='border-collapse: collapse; text-align: left;'>
+                <tr style='background-color: #f2f2f2;'>
+                    <th>Item</th>
+                    <th>Exp</th>
+                    <th>Qty</th>
+                    <th>Disc(₹)</th>
+                    <th>CGST</th>
+                    <th>SGST</th>
+                    <th style='text-align: right;'>Total</th>
+                </tr>"""
+            
+            for i in self.cart_items:
+                gst_pct = float(i.get('gst', 0))
+                cgst = gst_pct / 2
+                sgst = gst_pct / 2
+                html += f"""<tr>
+                    <td>{i['name']}</td>
+                    <td>{i['exp']}</td>
+                    <td>{i['qty_disp']}</td>
+                    <td>{i['disc']:.2f}</td>
+                    <td>{cgst:g}%</td>
+                    <td>{sgst:g}%</td>
+                    <td align='right'><b>{i['total']:.2f}</b></td>
+                </tr>"""
+            
+            html += f"""</table>
+            
+            <table width='100%' style='margin-top: 15px;'>
+                <tr><td align='right'>Total GST Included: ₹{total_gst_amount:.2f}</td></tr>
+                <tr><td align='right'>Total Discount: ₹{total_discount_amount:.2f}</td></tr>
+                <tr><td align='right' style='font-size: 16px;'><b>Grand Total: ₹{total:.2f}</b></td></tr>
+                <tr><td align='right'>Paid Amount: ₹{paid:.2f}</td></tr>"""
+                
+            if bal > 0: 
+                html += f"<tr><td align='right' style='color: red;'><b>Due Balance: ₹{bal:.2f}</b></td></tr>"
+                
+            html += "</table><br><br><center><i>Thank You! Wishing you a speedy recovery.</i></center></div>"
         
-        html += f"</table><hr><table width='100%'><tr><td align='right'><b>Total: ₹{total:.2f}</b></td></tr>"
-        html += f"<tr><td align='right'>Paid: ₹{paid:.2f}</td></tr>"
-        if bal > 0: html += f"<tr><td align='right'><b>Due: ₹{bal:.2f}</b></td></tr>"
-        html += "</table><br><center>Thank You!</center></div>"
-        
-        printer = QPrinter(); doc = QTextDocument(); doc.setHtml(html)
-        if QPrintDialog(printer, self).exec(): doc.print(printer)
+        printer = QPrinter()
+        if "Thermal" in printer_type:
+            printer.setResolution(300) # Keep text sharp for POS printing
+            
+        text_doc = QTextDocument()
+        text_doc.setHtml(html)
+        if QPrintDialog(printer, self).exec(): 
+            text_doc.print(printer)
 
 class BillingInterface(QWidget):
     def __init__(self):
@@ -441,7 +602,10 @@ class BillingInterface(QWidget):
         if self.tabs.count() > 1: self.tabs.removeTab(i)
     
     def refresh_cache(self):
-        if self.tabs.currentWidget(): self.tabs.currentWidget().refresh_cache()
+        for i in range(self.tabs.count()):
+            tab = self.tabs.widget(i)
+            if hasattr(tab, 'refresh_cache'):
+                tab.refresh_cache()
 
     def load_bill_for_editing(self, bid):
         self.add_new_tab()

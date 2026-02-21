@@ -760,6 +760,7 @@ class PurchaseEntryInterface(QWidget):
                         "qty_units": final_qty_units, 
                         "rate_unit": final_rate_unit, 
                         "mrp_unit": final_mrp_unit, 
+                        "mrp_strip": mrp_per_strip, 
                         "total": line_total
                     })
                 except ValueError:
@@ -789,14 +790,14 @@ class PurchaseEntryInterface(QWidget):
                 if existing:
                     cur.execute("""
                         UPDATE Medicine_Stock 
-                        SET quantity = quantity + ?, purchase_rate = ?, sale_rate = ? 
+                        SET quantity = quantity + ?, purchase_rate = ?, sale_rate = ?, rate_per_tab = ? 
                         WHERE stock_id = ?
-                    """, (row['qty_units'], row['rate_unit'], row['mrp_unit'], existing[0]))
+                    """, (row['qty_units'], row['rate_unit'], row['mrp_strip'], row['mrp_unit'], existing[0]))
                 else:
                     cur.execute("""
-                        INSERT INTO Medicine_Stock (med_id, batch_no, mfg_date, exp_date, quantity, purchase_rate, sale_rate) 
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """, (row['med_id'], row['batch'], row['mfg'], row['exp'], row['qty_units'], row['rate_unit'], row['mrp_unit']))
+                        INSERT INTO Medicine_Stock (med_id, batch_no, mfg_date, exp_date, quantity, purchase_rate, sale_rate, rate_per_tab) 
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (row['med_id'], row['batch'], row['mfg'], row['exp'], row['qty_units'], row['rate_unit'], row['mrp_strip'], row['mrp_unit']))
 
             if balance_amt != 0:
                 cur.execute("UPDATE Supplier SET balance = balance + ? WHERE Supp_id = ?", (balance_amt, supp_id))

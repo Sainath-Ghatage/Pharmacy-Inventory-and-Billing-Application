@@ -720,8 +720,18 @@ class StockInterface(QWidget):
             if qty <= min_qty:
                 self.add_row_std(self.table_low, items_std, row_data)
                 
-            if days_left <= 60:
-                status_text = "Expired" if days_left < 0 else f"{days_left} Days Left"
+            # --- CHANGED: Check if days left is 180 (approx 6 months) or less ---
+            if days_left <= 180:
+                if days_left < 0:
+                    status_text = "Expired"
+                else:
+                    # Optional: formats it to months if it's far away, else days
+                    months_left = days_left // 30
+                    if months_left >= 1:
+                        status_text = f"~{months_left} Months Left"
+                    else:
+                        status_text = f"{days_left} Days Left"
+                
                 items_exp = [str(stock_id), name, m_type, rack, batch, disp_qty, f"{disp_pp:.2f}", f"{disp_sp:.2f}", mfg, exp, status_text]
                 self.add_row_exp(self.table_exp, items_exp, days_left)
                 

@@ -170,6 +170,16 @@ class SalesInterface(QWidget):
         splitter.setSizes([700, 400])
         main_layout.addWidget(splitter)
 
+    # --- NEW: Instant Refresh Event ---
+    def showEvent(self, event):
+        """Automatically called by PyQt whenever this tab becomes visible."""
+        super().showEvent(event)
+        self.load_bills()
+
+    def refresh_data(self):
+        """Public method so the main window can force a refresh if needed."""
+        self.load_bills()
+
     def load_bills(self):
         query_text = self.search_input.text().strip().lower()
         self.bill_table.setRowCount(0)

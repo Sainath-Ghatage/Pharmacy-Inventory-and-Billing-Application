@@ -3,7 +3,7 @@ import sqlite3
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
     QLineEdit, QTextEdit, QPushButton, QFrame, QMessageBox, QGridLayout,
-    QTabWidget, QGroupBox, QScrollArea, QSizePolicy
+    QTabWidget, QGroupBox, QScrollArea, QSizePolicy, QComboBox
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QIcon, QAction
@@ -42,7 +42,7 @@ class PharmacyDetailsInterface(QWidget):
             QMessageBox QPushButton:hover {{ background-color: #e0e0e0; }}
         """)
         
-        # Ensure DB has new email columns
+        # Ensure DB has new email and printer columns
         self.check_schema()
         
         self.is_editing = False 
@@ -51,7 +51,7 @@ class PharmacyDetailsInterface(QWidget):
         self.load_data()
 
     def check_schema(self):
-        """Automatically adds email columns if they don't exist."""
+        """Automatically adds missing columns if they don't exist."""
         conn = database.get_connection()
         if not conn: return
         cursor = conn.cursor()
@@ -63,6 +63,8 @@ class PharmacyDetailsInterface(QWidget):
                 cursor.execute("ALTER TABLE Pharmacy ADD COLUMN smtp_email TEXT")
             if "smtp_password" not in columns:
                 cursor.execute("ALTER TABLE Pharmacy ADD COLUMN smtp_password TEXT")
+            if "printer_type" not in columns:
+                cursor.execute("ALTER TABLE Pharmacy ADD COLUMN printer_type TEXT DEFAULT 'Thermal Printer (80mm/58mm)'")
             
             conn.commit()
         except Exception as e:
@@ -134,6 +136,11 @@ class PharmacyDetailsInterface(QWidget):
         self.inp_gstin = self.create_input("GSTIN / Reg No.")
         self.inp_license = self.create_input("Drug License Number")
         
+        self.cmb_printer = QComboBox()
+        self.cmb_printer.addItems(["Thermal Printer (80mm/58mm)", "Laser/Inkjet Printer (A4)"])
+        self.cmb_printer.setFixedHeight(40)
+        self.cmb_printer.setStyleSheet(self.get_input_style())
+        
         self.inp_address = QTextEdit()
         self.inp_address.setPlaceholderText("Full Address")
         self.inp_address.setFixedHeight(80)
@@ -144,11 +151,12 @@ class PharmacyDetailsInterface(QWidget):
         self.add_form_row(form_grid, 2, "Public Email:", self.inp_email)
         self.add_form_row(form_grid, 3, "GSTIN:", self.inp_gstin)
         self.add_form_row(form_grid, 4, "License No:", self.inp_license)
+        self.add_form_row(form_grid, 5, "Default Printer:", self.cmb_printer)
         
         lbl_addr = QLabel("Address:")
         lbl_addr.setStyleSheet(f"font-weight: bold; font-size: 14px; border: none; color: {COLOR_TEXT_PRIMARY};")
-        form_grid.addWidget(lbl_addr, 5, 0, alignment=Qt.AlignmentFlag.AlignTop)
-        form_grid.addWidget(self.inp_address, 5, 1)
+        form_grid.addWidget(lbl_addr, 6, 0, alignment=Qt.AlignmentFlag.AlignTop)
+        form_grid.addWidget(self.inp_address, 6, 1)
 
         layout.addLayout(form_grid)
         layout.addStretch()
@@ -239,12 +247,20 @@ class PharmacyDetailsInterface(QWidget):
 
     def get_input_style(self):
         return f"""
-            QLineEdit, QTextEdit {{
+            QLineEdit, QTextEdit, QComboBox {{
                 color: {COLOR_TEXT_PRIMARY}; border: 1px solid {COLOR_BORDER}; border-radius: 5px;
                 padding: 8px; font-size: 14px; background-color: {COLOR_WHITE};
             }}
-            QLineEdit:focus, QTextEdit:focus {{ border: 1px solid {COLOR_NAVBAR}; }}
-            QLineEdit:disabled, QTextEdit:disabled {{ background-color: {COLOR_READONLY}; color: #555; }}
+            QLineEdit:focus, QTextEdit:focus, QComboBox:focus {{ border: 1px solid {COLOR_NAVBAR}; }}
+            QLineEdit:disabled, QTextEdit:disabled, QComboBox:disabled {{ background-color: {COLOR_READONLY}; color: #555; }}
+            
+            /* Explicitly force the dropdown list items to be black on white */
+            QComboBox QAbstractItemView {{
+                color: #000000;
+                background-color: {COLOR_WHITE};
+                selection-background-color: #e3f2fd;
+                selection-color: #000000;
+            }}
         """
 
     def add_form_row(self, layout, row, label_text, widget):
@@ -273,6 +289,7 @@ class PharmacyDetailsInterface(QWidget):
         self.inp_email.setReadOnly(readonly); self.inp_email.setEnabled(not readonly)
         self.inp_gstin.setReadOnly(readonly); self.inp_gstin.setEnabled(not readonly)
         self.inp_license.setReadOnly(readonly); self.inp_license.setEnabled(not readonly)
+        self.cmb_printer.setEnabled(not readonly) # QComboBox doesn't have setReadOnly
         self.inp_address.setReadOnly(readonly); self.inp_address.setEnabled(not readonly)
         
         # Email Settings
@@ -286,10 +303,10 @@ class PharmacyDetailsInterface(QWidget):
         
         # Select including new columns
         try:
-            cursor.execute("SELECT p_name, phone, email, GSTIN, license_no, location, smtp_email, smtp_password FROM Pharmacy LIMIT 1")
+            cursor.execute("SELECT p_name, phone, email, GSTIN, license_no, location, smtp_email, smtp_password, printer_type FROM Pharmacy LIMIT 1")
             row = cursor.fetchone()
         except Exception:
-            # Fallback if columns missing (shouldn't happen due to check_schema)
+            # Fallback if columns missing
             row = None
         
         conn.close()
@@ -305,6 +322,12 @@ class PharmacyDetailsInterface(QWidget):
             # Email settings
             self.inp_smtp_email.setText(row[6] or "")
             self.inp_smtp_pass.setText(row[7] or "")
+            
+            # Printer Settings
+            printer_val = row[8] if len(row) > 8 and row[8] else "Thermal Printer (80mm/58mm)"
+            idx = self.cmb_printer.findText(printer_val)
+            if idx >= 0:
+                self.cmb_printer.setCurrentIndex(idx)
         else:
             if not self.is_editing: self.toggle_edit_mode()
 
@@ -313,6 +336,7 @@ class PharmacyDetailsInterface(QWidget):
         gstin = self.inp_gstin.text().strip()
         smtp_email = self.inp_smtp_email.text().strip()
         smtp_pass = self.inp_smtp_pass.text().strip()
+        printer_type = self.cmb_printer.currentText()
 
         # 1. Validate Pharmacy Name
         if not name:
@@ -322,7 +346,6 @@ class PharmacyDetailsInterface(QWidget):
         # 2. Validate GSTIN (Must be exactly 15 alphanumeric characters)
         if not gstin or len(gstin) != 15 or not gstin.isalnum():
             QMessageBox.warning(self, "Validation Error", "GSTIN number must be exactly 15 alphanumeric characters.")
-            # Optional: Set focus back to the input field so the user can fix it immediately
             self.inp_gstin.setFocus()
             return False
 
@@ -337,18 +360,18 @@ class PharmacyDetailsInterface(QWidget):
             data = (
                 name, self.inp_phone.text().strip(), self.inp_email.text().strip(),
                 gstin, self.inp_license.text().strip(),
-                self.inp_address.toPlainText().strip(), smtp_email, smtp_pass
+                self.inp_address.toPlainText().strip(), smtp_email, smtp_pass, printer_type
             )
 
             if count == 0:
                 cursor.execute("""
-                    INSERT INTO Pharmacy (p_name, phone, email, GSTIN, license_no, location, smtp_email, smtp_password)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO Pharmacy (p_name, phone, email, GSTIN, license_no, location, smtp_email, smtp_password, printer_type)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, data)
             else:
                 cursor.execute("""
                     UPDATE Pharmacy 
-                    SET p_name=?, phone=?, email=?, GSTIN=?, license_no=?, location=?, smtp_email=?, smtp_password=?
+                    SET p_name=?, phone=?, email=?, GSTIN=?, license_no=?, location=?, smtp_email=?, smtp_password=?, printer_type=?
                 """, data)
 
             conn.commit()
