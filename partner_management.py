@@ -144,6 +144,15 @@ class GenericPartnerTab(QWidget):
             row_data_list = [str(val) if val is not None else "" for val in row[1:]]
 
             for j, val in enumerate(row[1:]):
+                col_name = self.sql_columns[j]
+                
+                # --- NEW LOGIC: Check if it's the balance column and format it ---
+                if col_name == "balance" and val is not None:
+                    try:
+                        val = f"{float(val):.2f}"
+                    except:
+                        pass
+                
                 item = QTableWidgetItem(str(val) if val is not None else "")
                 self.table.setItem(i, j+1, item)
             

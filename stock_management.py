@@ -248,7 +248,7 @@ class ProductMasterView(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 20, 10, 10)
         
-        # --- NEW FILTER BAR FOR PRODUCTS TAB ---
+        # --- FILTER BAR FOR PRODUCTS TAB ---
         top_bar = QHBoxLayout()
         
         lbl_search = QLabel("Search Product:")
@@ -261,8 +261,19 @@ class ProductMasterView(QWidget):
         self.type_filter.addItems(["All Types", "Tablet", "Capsule", "Syrup", "Injection", "Cream", 
             "Ointment", "Drops", "Personal Care & Wellness", "Spray", "Powder", "Medical Devices"])
         self.type_filter.currentTextChanged.connect(self.load_data)
+
+        lbl_sort = QLabel("Sort By:")
+        self.sort_filter = QComboBox()
+        self.sort_filter.addItems([
+            "ID (Lowest First)", 
+            "ID (Highest First)", 
+            "Name (A-Z)", 
+            "Name (Z-A)", 
+            "GST (Highest First)"
+        ])
+        self.sort_filter.currentTextChanged.connect(self.load_data)
         
-        btn_refresh = QPushButton("Clear & Refresh")
+        btn_refresh = QPushButton("Clear Filters")
         btn_refresh.clicked.connect(self.clear_filters_and_refresh)
         btn_refresh.setStyleSheet(f"background-color: {COLOR_NAVBAR}; color: white; padding: 6px 15px; border-radius: 4px;")
 
@@ -270,6 +281,8 @@ class ProductMasterView(QWidget):
         top_bar.addWidget(self.search_input)
         top_bar.addWidget(lbl_type)
         top_bar.addWidget(self.type_filter)
+        top_bar.addWidget(lbl_sort)
+        top_bar.addWidget(self.sort_filter)
         top_bar.addWidget(btn_refresh)
         layout.addLayout(top_bar)
         
@@ -307,11 +320,13 @@ class ProductMasterView(QWidget):
     def clear_filters_and_refresh(self):
         self.search_input.clear()
         self.type_filter.setCurrentIndex(0)
+        self.sort_filter.setCurrentIndex(0)
         self.load_data()
 
     def load_data(self):
         search_text = self.search_input.text().strip()
         prod_type = self.type_filter.currentText()
+        sort_choice = self.sort_filter.currentText()
         
         self.table.setRowCount(0)
         conn = database.get_connection()
@@ -329,7 +344,17 @@ class ProductMasterView(QWidget):
             query += " AND type = ?"
             params.append(prod_type)
             
-        query += " ORDER BY prod_name ASC"
+        # --- DYNAMIC SORTING LOGIC ---
+        if sort_choice == "Name (A-Z)":
+            query += " ORDER BY prod_name ASC"
+        elif sort_choice == "Name (Z-A)":
+            query += " ORDER BY prod_name DESC"
+        elif sort_choice == "ID (Lowest First)":
+            query += " ORDER BY prod_id ASC"
+        elif sort_choice == "ID (Highest First)":
+            query += " ORDER BY prod_id DESC"
+        elif sort_choice == "GST (Highest First)":
+            query += " ORDER BY gst DESC"
             
         cursor.execute(query, params)
         rows = cursor.fetchall()
@@ -597,20 +622,37 @@ class StockInterface(QWidget):
         stock_layout = QVBoxLayout(self.tab_stock_widget)
         stock_layout.setContentsMargins(10, 10, 10, 10)
         
-        # --- NEW FILTER BAR FOR STOCK DASHBOARD ---
+        # --- FILTER BAR FOR STOCK DASHBOARD ---
         filter_bar = QHBoxLayout()
         lbl_search = QLabel("Search:")
         self.stock_search_input = QLineEdit()
         self.stock_search_input.setPlaceholderText("Search by product or batch...")
         self.stock_search_input.textChanged.connect(self.load_data)
 
-        lbl_type = QLabel("Type Filter:")
+        lbl_type = QLabel("Type:")
         self.stock_type_filter = QComboBox()
         self.stock_type_filter.addItems(["All Types", "Tablet", "Capsule", "Syrup", "Injection", "Cream", 
             "Ointment", "Drops", "Personal Care & Wellness", "Spray", "Powder", "Medical Devices"])
         self.stock_type_filter.currentTextChanged.connect(self.load_data)
 
-        btn_stock_refresh = QPushButton("Clear & Refresh")
+        # --- UPDATED: SORT BY FOR STOCK DASHBOARD ---
+        lbl_sort = QLabel("Sort By:")
+        self.stock_sort_filter = QComboBox()
+        self.stock_sort_filter.addItems([
+            "ID (Lowest First)", 
+            "ID (Highest First)",
+            "Name (A-Z)", 
+            "Name (Z-A)", 
+            "Expiry (Earliest First)", 
+            "Expiry (Latest First)", 
+            "Quantity (Lowest First)", 
+            "Quantity (Highest First)",
+            "Price (Lowest First)",
+            "Price (Highest First)"
+        ])
+        self.stock_sort_filter.currentTextChanged.connect(self.load_data)
+
+        btn_stock_refresh = QPushButton("Clear Filters")
         btn_stock_refresh.clicked.connect(self.clear_stock_filters)
         btn_stock_refresh.setStyleSheet(f"background-color: {COLOR_NAVBAR}; color: white; padding: 6px 15px; border-radius: 4px;")
 
@@ -618,6 +660,8 @@ class StockInterface(QWidget):
         filter_bar.addWidget(self.stock_search_input)
         filter_bar.addWidget(lbl_type)
         filter_bar.addWidget(self.stock_type_filter)
+        filter_bar.addWidget(lbl_sort)
+        filter_bar.addWidget(self.stock_sort_filter)
         filter_bar.addWidget(btn_stock_refresh)
         
         stock_layout.addLayout(filter_bar)
@@ -670,6 +714,7 @@ class StockInterface(QWidget):
     def clear_stock_filters(self):
         self.stock_search_input.clear()
         self.stock_type_filter.setCurrentIndex(0)
+        self.stock_sort_filter.setCurrentIndex(0)
         self.load_data()
 
     def setup_table(self, table, columns, is_expiry_table=False):
@@ -711,6 +756,7 @@ class StockInterface(QWidget):
     def load_data(self):
         search_text = self.stock_search_input.text().strip()
         prod_type = self.stock_type_filter.currentText()
+        sort_choice = self.stock_sort_filter.currentText()
         
         self.table_all.setRowCount(0)
         self.table_low.setRowCount(0)
@@ -737,10 +783,50 @@ class StockInterface(QWidget):
             query += " AND d.type = ?"
             params.append(prod_type)
             
-        query += " ORDER BY d.prod_name ASC"
+        # --- DYNAMIC SORTING LOGIC ---
+        if sort_choice == "ID (Lowest First)":
+            query += " ORDER BY s.stock_id ASC"
+        elif sort_choice == "ID (Highest First)":
+            query += " ORDER BY s.stock_id DESC"
+        elif sort_choice == "Name (A-Z)":
+            query += " ORDER BY d.prod_name ASC"
+        elif sort_choice == "Name (Z-A)":
+            query += " ORDER BY d.prod_name DESC"
+        elif sort_choice == "Quantity (Lowest First)":
+            query += " ORDER BY s.quantity ASC"
+        elif sort_choice == "Quantity (Highest First)":
+            query += " ORDER BY s.quantity DESC"
+        elif sort_choice == "Price (Lowest First)":
+            query += " ORDER BY s.sale_rate ASC"
+        elif sort_choice == "Price (Highest First)":
+            query += " ORDER BY s.sale_rate DESC"
+        elif sort_choice == "Expiry (Earliest First)":
+            # Rough sort via text; Python finishes it below
+            query += " ORDER BY s.exp_date ASC"
+        elif sort_choice == "Expiry (Latest First)":
+            query += " ORDER BY s.exp_date DESC"
+        else:
+            query += " ORDER BY s.stock_id ASC"
         
         cursor.execute(query, params)
         rows = cursor.fetchall()
+        
+        # --- POST-PROCESSING SORT FOR DATES ---
+        if "Expiry" in sort_choice:
+            def extract_date(row):
+                exp_str = row[10]
+                if not exp_str: return date.max if "Earliest" in sort_choice else date.min
+                try:
+                    if "/" in exp_str:
+                        m, y = map(int, exp_str.split('/'))
+                        return date(2000+y, m, 1)
+                    else:
+                        return datetime.strptime(exp_str, "%Y-%m-%d").date()
+                except:
+                    return date.max if "Earliest" in sort_choice else date.min
+
+            rows.sort(key=extract_date, reverse=("Latest" in sort_choice))
+
         today = date.today()
 
         for row in rows:
@@ -753,11 +839,9 @@ class StockInterface(QWidget):
             tps = int(tps) if tps else 1
             
             # --- CONVERSION LOGIC FOR DISPLAY ---
-            # DB stores Unit Price -> Show Strip Price
             disp_pp = pp * tps
             disp_sp = sp * tps
             
-            # DB stores Total Units -> Show Strips + Tabs
             qty_tabs = int(qty)
             if tps > 1:
                 strips = qty_tabs // tps
@@ -790,12 +874,10 @@ class StockInterface(QWidget):
             if qty <= min_qty:
                 self.add_row_std(self.table_low, items_std, row_data)
                 
-            # --- CHANGED: Check if days left is 180 (approx 6 months) or less ---
             if days_left <= 180:
                 if days_left < 0:
                     status_text = "Expired"
                 else:
-                    # Optional: formats it to months if it's far away, else days
                     months_left = days_left // 30
                     if months_left >= 1:
                         status_text = f"~{months_left} Months Left"
@@ -806,9 +888,6 @@ class StockInterface(QWidget):
                 self.add_row_exp(self.table_exp, items_exp, days_left)
                 
         conn.close()
-        
-        # We shouldn't call master_view.load_data() endlessly if this was triggered by its own filter 
-        # so it's safer to not cross-call unless we are saving new data. 
 
     def add_row_std(self, table, display_list, full_data):
         row = table.rowCount()

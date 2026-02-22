@@ -70,22 +70,22 @@ class FinancialDashboard(QWidget):
         # TAB 1: Profit & Loss
         self.tab_pl = QTableWidget()
         self.setup_fin_table(self.tab_pl, ["Category", "Description", "Amount"])
-        self.tabs.addTab(self.tab_pl, "📈 Profit & Loss")
+        self.tabs.addTab(self.tab_pl, "Profit & Loss")
 
         # TAB 2: Cash Flow
         self.tab_cash = QTableWidget()
         self.setup_fin_table(self.tab_cash, ["Type", "Description", "Amount"])
-        self.tabs.addTab(self.tab_cash, "💸 Cash Flow")
+        self.tabs.addTab(self.tab_cash, "Cash Flow")
 
         # TAB 3: Receivables & Payables
         self.tab_dues = QTableWidget()
         self.setup_fin_table(self.tab_dues, ["Type", "Party / Description", "Pending Balance"])
-        self.tabs.addTab(self.tab_dues, "🧾 Receivables & Payables")
+        self.tabs.addTab(self.tab_dues, "Receivables && Payables")
 
         # TAB 4: Stock Valuation
         self.tab_stock = QTableWidget()
         self.setup_fin_table(self.tab_stock, ["Category", "Metric", "Valuation"])
-        self.tabs.addTab(self.tab_stock, "📦 Stock Valuation")
+        self.tabs.addTab(self.tab_stock, "Stock Valuation")
 
         layout.addWidget(self.tabs)
 
