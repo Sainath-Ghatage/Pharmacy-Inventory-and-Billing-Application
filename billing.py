@@ -148,12 +148,12 @@ class SingleBillTab(QWidget):
 
         self.table = QTableWidget()
         self.table.setColumnCount(9)
-        self.table.setHorizontalHeaderLabels(["Product Name", "Batch", "Exp", "Qty", "Rate", "GST", "Disc", "Total", "Del"])
+        # REORGANIZED: Rate before Qty
+        self.table.setHorizontalHeaderLabels(["Product Name", "Batch", "Exp", "Rate", "Qty", "GST", "Disc", "Total", "Del"])
         
-        # --- FIX: Ensure the table is scrollable and column 0 isn't squeezed ---
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents) # Allows Name to expand
         self.table.horizontalHeader().setStretchLastSection(True)
-        self.table.setMinimumWidth(600) # Ensure table takes space
+        self.table.setMinimumWidth(600) 
         
         self.table.setColumnWidth(8, 40)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -191,7 +191,6 @@ class SingleBillTab(QWidget):
             self.doc_completer.model().setStringList(self.doctor_names)
         finally: conn.close()
         
-        # --- NEW: Refresh the product search list to show updated stock instantly ---
         self.search_product(self.search_input.text())
 
     def search_product(self, text):
@@ -210,7 +209,6 @@ class SingleBillTab(QWidget):
             tps = int(tps) if tps else 1
             rate = float(rate or 0)
             
-            # Expired check
             is_expired = False
             try:
                 if "/" in exp: m, y = map(int, exp.split('/')); exp_dt = datetime.date(2000+y, m, 1)
@@ -275,7 +273,6 @@ class SingleBillTab(QWidget):
             "raw_data": data, "is_strip": tps > 1
         }
         
-        # Check duplicate
         found = False
         for i, it in enumerate(self.cart_items):
             if it['stock_id'] == data['stock_id']: self.cart_items[i] = item; found = True; break
@@ -298,9 +295,10 @@ class SingleBillTab(QWidget):
             
             def item(t): i = QTableWidgetItem(str(t)); i.setForeground(QBrush(QColor("black"))); return i
             
+            # REORGANIZED INSERTION
             self.table.setItem(r, 0, item(it['name'])); self.table.setItem(r, 1, item(it['batch']))
-            self.table.setItem(r, 2, item(it['exp'])); self.table.setItem(r, 3, item(it['qty_disp']))
-            self.table.setItem(r, 4, item(f"{rate:.2f}")); self.table.setItem(r, 5, item(f"{it['gst']}%"))
+            self.table.setItem(r, 2, item(it['exp'])); self.table.setItem(r, 3, item(f"{rate:.2f}"))
+            self.table.setItem(r, 4, item(it['qty_disp'])); self.table.setItem(r, 5, item(f"{it['gst']}%"))
             self.table.setItem(r, 6, item(f"{it['disc']:.2f}")); self.table.setItem(r, 7, item(f"{it['total']:.2f}"))
             
             btn = QPushButton("X"); btn.setFixedSize(30, 25); btn.setStyleSheet(f"background:{COLOR_RED_BTN}; border:none; color:white;")
@@ -319,7 +317,6 @@ class SingleBillTab(QWidget):
         if bal > 0.01: self.lbl_balance.setText(f"Balance: ₹{bal:.2f}")
         else: self.lbl_balance.setText(f"Change: ₹{abs(bal):.2f}")
 
-    # --- EDIT MODE: Load Data ---
     def load_bill_data(self, bill_id):
         self.editing_bill_id = bill_id
         conn = database.get_connection(); cursor = conn.cursor()
@@ -339,13 +336,12 @@ class SingleBillTab(QWidget):
             for pid, qty, total, name, gst, tps, rack in items:
                 cursor.execute("SELECT stock_id, batch_no, exp_date, quantity, sale_rate FROM Product_Stock WHERE prod_id=? LIMIT 1", (pid,))
                 stock = cursor.fetchone()
-                if not stock: continue # Skip if stock definition gone
+                if not stock: continue 
                 
                 sid, batch, exp, curr_qty, unit_rate = stock
                 tps = int(tps) if tps else 1
                 qty_disp = f"{int(qty)//tps}s + {int(qty)%tps}l" if tps > 1 else str(qty)
                 
-                # Reconstruct Item
                 self.cart_items.append({
                     "stock_id": sid, "prod_id": pid, "name": name, "batch": batch, "exp": exp,
                     "qty_total": qty, "qty_disp": qty_disp, "unit_rate": unit_rate,
@@ -366,7 +362,6 @@ class SingleBillTab(QWidget):
         credit = total - paid
         pat_input = self.inp_patient.text().strip()
         
-        # --- Check if balance is 1 Rupee or more, AND customer name is empty ---
         if credit >= 1.0 and not pat_input:
             QMessageBox.warning(self, "Customer Name Required", "Balance cannot be credited as the customer name is not inserted.")
             return
@@ -376,15 +371,12 @@ class SingleBillTab(QWidget):
         
         conn = database.get_connection(); cursor = conn.cursor()
         try:
-            # --- RESTORE STOCK IF EDITING ---
             if self.editing_bill_id:
-                # 1. Restore old quantities
                 cursor.execute("SELECT Prod_id, quantity FROM Bill_Item WHERE Bill_id=?", (self.editing_bill_id,))
                 old_items = cursor.fetchall()
                 for pid, qty in old_items:
                     cursor.execute("UPDATE Product_Stock SET quantity = quantity + ? WHERE prod_id=?", (qty, pid))
                 
-                # 2. Adjust Customer Balance (Reverse old credit)
                 cursor.execute("SELECT balance, total_sum, paid_amount FROM Bill WHERE Bill_id=?", (self.editing_bill_id,))
                 old_bill = cursor.fetchone()
                 if old_bill:
@@ -392,11 +384,9 @@ class SingleBillTab(QWidget):
                     if old_credit > 0:
                         cursor.execute("UPDATE Customer SET balance = balance - ? WHERE Name = ?", (old_credit, pat))
 
-                # 3. Delete Old Bill
                 cursor.execute("DELETE FROM Bill_Item WHERE Bill_id=?", (self.editing_bill_id,))
                 cursor.execute("DELETE FROM Bill WHERE Bill_id=?", (self.editing_bill_id,))
 
-            # --- SAVE NEW BILL ---
             cursor.execute("INSERT INTO Bill (patient_name, doctor_name, payment_method, total_sum, paid_amount, balance, bill_date) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))", 
                            (pat, doc, self.cmb_payment.currentText(), total, paid, credit))
             bid = cursor.lastrowid
@@ -418,7 +408,7 @@ class SingleBillTab(QWidget):
                 self.print_receipt(bid, pat, doc, total, paid, credit)
             
             self.cart_items = []; self.refresh_table(); self.inp_patient.clear(); self.inp_doctor.clear()
-            self.spin_paid.setValue(0); self.editing_bill_id = None # Reset edit mode
+            self.spin_paid.setValue(0); self.editing_bill_id = None 
 
         except Exception as e: conn.rollback(); QMessageBox.critical(self, "Error", str(e))
         finally: conn.close()
@@ -427,13 +417,10 @@ class SingleBillTab(QWidget):
         conn = database.get_connection()
         cur = conn.cursor()
         
-        # --- FETCH PRINTER SETTING FROM DATABASE ---
         try:
-            # We fetch printer_type along with other details
             cur.execute("SELECT p_name, phone, email, location, GSTIN, printer_type FROM Pharmacy LIMIT 1")
             ph = cur.fetchone()
         except sqlite3.OperationalError:
-            # Fallback in case schema hasn't updated yet
             cur.execute("SELECT p_name, phone, email, location, GSTIN FROM Pharmacy LIMIT 1")
             ph = cur.fetchone()
             ph = ph + ("Thermal Printer (80mm/58mm)",) if ph else None
@@ -446,9 +433,7 @@ class SingleBillTab(QWidget):
         addr = ph[3] if ph else ""
         gstin_val = ph[4] if ph else ""
         
-        # Determine printer layout type
         printer_type = ph[5] if ph and len(ph) > 5 and ph[5] else "Thermal Printer (80mm/58mm)"
-        
         now_str = datetime.datetime.now().strftime('%d-%m-%Y %H:%M')
         
         total_gst_amount = 0.0
@@ -516,6 +501,7 @@ class SingleBillTab(QWidget):
             
         else:
             # --- 2. LASER / INKJET (A4) PRINTER HTML LAYOUT ---
+            # REORGANIZED: Rate before Qty
             contact_str = f"Ph: {phone}" if phone else ""
             email_str = f" | Email: {email}" if email else ""
             gstin_str = f"<br>GSTIN: {gstin_val}" if gstin_val else ""
@@ -535,6 +521,7 @@ class SingleBillTab(QWidget):
                 <tr style='background-color: #f2f2f2;'>
                     <th>Item</th>
                     <th>Exp</th>
+                    <th>Rate</th>
                     <th>Qty</th>
                     <th>Disc(₹)</th>
                     <th>CGST</th>
@@ -546,9 +533,12 @@ class SingleBillTab(QWidget):
                 gst_pct = float(i.get('gst', 0))
                 cgst = gst_pct / 2
                 sgst = gst_pct / 2
+                rate = i['strip_rate'] if i['is_strip'] else i['unit_rate']
+                
                 html += f"""<tr>
                     <td>{i['name']}</td>
                     <td>{i['exp']}</td>
+                    <td>{rate:.2f}</td>
                     <td>{i['qty_disp']}</td>
                     <td>{i['disc']:.2f}</td>
                     <td>{cgst:g}%</td>
@@ -571,7 +561,7 @@ class SingleBillTab(QWidget):
         
         printer = QPrinter()
         if "Thermal" in printer_type:
-            printer.setResolution(300) # Keep text sharp for POS printing
+            printer.setResolution(300) 
             
         text_doc = QTextDocument()
         text_doc.setHtml(html)
