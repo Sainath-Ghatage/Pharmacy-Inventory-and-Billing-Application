@@ -28,6 +28,7 @@ COLOR_NAVBAR = "#0d47a1"
 COLOR_SIDEBAR = "#e9ecef"
 COLOR_TEXT = "#212529"
 COLOR_TOTAL_ROW = "#e7f1ff"
+COLOR_HIGHLIGHT = "#fff3cd"
 
 # --- FINANCIAL COLORS ---
 C_REV = "#198754"      # Green
@@ -54,7 +55,7 @@ class FinancialDashboard(QWidget):
         self.lbl_margin = self.create_card("Gross Margin %", "0.0%", C_REV)
         self.lbl_exp_ratio = self.create_card("Expense Ratio", "0.0%", C_EXP)
         self.lbl_receivables = self.create_card("Receivables", "₹0.00", C_COST)
-        self.lbl_cash = self.create_card("Cash Balance", "₹0.00", COLOR_NAVBAR)
+        self.lbl_cash = self.create_card("Cash Balance", "₹0.00", COLOR_NAVBAR) 
         
         layout.addLayout(self.cards_layout)
 
@@ -376,7 +377,7 @@ class ReportsInterface(QWidget):
             conn.close()
 
     # ==========================================
-    # --- FINANCIAL DASHBOARD LOGIC (NEW) ---
+    # --- FINANCIAL DASHBOARD LOGIC ---
     # ==========================================
     def populate_financial_dashboard(self, cursor, d_from, d_to):
         fd = self.fin_dash
@@ -390,14 +391,12 @@ class ReportsInterface(QWidget):
         cursor.execute("SELECT SUM(total_amount), SUM(amount_received) FROM Purchase_Return WHERE date(return_date) BETWEEN ? AND ?", (d_from, d_to))
         row = cursor.fetchone(); pr_returns = row[0] or 0; pr_cash_rcv = row[1] or 0
 
-        # COGS Calculation
         cursor.execute("""
             SELECT SUM(bi.quantity * (SELECT AVG(s.purchase_rate) FROM Product_Stock s WHERE s.prod_id = bi.Prod_id)) 
             FROM Bill_Item bi JOIN Bill b ON bi.Bill_id = b.Bill_id WHERE date(b.bill_date) BETWEEN ? AND ?
         """, (d_from, d_to))
         cogs = cursor.fetchone()[0] or 0
 
-        # GST Calculations (Approximate from Sales and Purchases)
         cursor.execute("""
             SELECT SUM(bi.total_price - (bi.total_price / (1.0 + (p.gst / 100.0))))
             FROM Bill_Item bi JOIN Product_Details p ON bi.Prod_id = p.prod_id JOIN Bill b ON bi.Bill_id = b.Bill_id
@@ -412,7 +411,6 @@ class ReportsInterface(QWidget):
         """, (d_from, d_to))
         gst_paid = cursor.fetchone()[0] or 0
 
-        # Expired Stock Loss (Current Snapshot, not strictly bounded by date, but crucial for P&L)
         cursor.execute("SELECT exp_date, quantity, purchase_rate FROM Product_Stock")
         expired_loss = 0.0
         today = datetime.date.today()
@@ -424,13 +422,11 @@ class ReportsInterface(QWidget):
                     if exp_dt < today: expired_loss += float(qty * rate)
             except: pass
 
-        # Expenses
         cursor.execute("SELECT expense_type, SUM(amount) FROM Expenses WHERE date(expense_date) BETWEEN ? AND ? GROUP BY expense_type", (d_from, d_to))
         expenses_data = cursor.fetchall()
         total_expenses = sum([e[1] for e in expenses_data])
 
-        # Financial Math
-        net_revenue = gross_sales # Assuming gross_sales already has discounts subtracted in Bill total_sum
+        net_revenue = gross_sales 
         gross_profit = net_revenue - cogs
         net_profit = gross_profit - total_expenses - expired_loss + pr_returns
 
@@ -461,7 +457,6 @@ class ReportsInterface(QWidget):
         cursor.execute("SELECT SUM(paid_amount) FROM Bill WHERE date(bill_date) BETWEEN ? AND ?", (d_from, d_to)); sales_cash_in = cursor.fetchone()[0] or 0
         cursor.execute("SELECT SUM(paid_amount) FROM Purchase_Invoice WHERE date(invoice_date) BETWEEN ? AND ?", (d_from, d_to)); purch_cash_out = cursor.fetchone()[0] or 0
         
-        # ALL TIME Cash Flow (Liquidity)
         cursor.execute("SELECT SUM(paid_amount) FROM Bill"); all_time_sales_in = cursor.fetchone()[0] or 0
         cursor.execute("SELECT SUM(amount_received) FROM Purchase_Return"); all_time_ret_in = cursor.fetchone()[0] or 0
         cursor.execute("SELECT SUM(paid_amount) FROM Purchase_Invoice"); all_time_purch_out = cursor.fetchone()[0] or 0
@@ -551,13 +546,39 @@ class ReportsInterface(QWidget):
 
         for i, row in enumerate(rows):
             self.table.insertRow(i)
+            
+            # Check if this is a header/divider row in the P&L array
+            is_divider = False
+            if len(row) > 0 and str(row[0]).startswith("---"):
+                is_divider = True
+
+            # Check if this is the final "Total Amount I Have" row
+            is_final_total = False
+            if len(row) > 0 and str(row[0]) == "THE BOTTOM LINE":
+                is_final_total = True
+
             for j, val in enumerate(row):
-                s_val = str(val) if val is not None else ""
-                item = QTableWidgetItem(s_val)
+                # --- FIX: Format floating point numbers to max 2 decimal places ---
+                if isinstance(val, float):
+                    val = round(val, 2)  # Safely rounds the internal float
+                # ------------------------------------------------------------------
                 
-                if s_val.replace('.', '', 1).isdigit() or "₹" in s_val:
+                str_val = str(val) if val is not None else ""
+                item = QTableWidgetItem(str_val)
+                
+                # Apply styling for dividers and total rows
+                if is_divider:
+                    font_bold = QFont()
+                    font_bold.setBold(True)
+                    item.setFont(font_bold)
+                    item.setBackground(QBrush(QColor("#e9ecef")))
+                elif is_final_total:
+                    item.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
+                    item.setBackground(QBrush(QColor(COLOR_HIGHLIGHT)))
+                
+                if str_val.replace('.', '', 1).isdigit() or "₹" in str_val:
                     item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-                    c_val = s_val.replace('₹', '').replace(',', '').replace('(', '-').replace(')', '').strip()
+                    c_val = str_val.replace('₹', '').replace(',', '').replace('(', '-').replace(')', '').strip()
                     try:
                         col_sums[j] += float(c_val)
                         is_num[j] = True
@@ -655,19 +676,13 @@ class ReportsInterface(QWidget):
                                       
         self.canvas.figure.tight_layout(); self.canvas.draw()
 
+# --- FIXED MplCanvas CLASS ---
 class MplCanvas(FigureCanvas):
     def __init__(self, parent=None, width=5, height=4, dpi=100):
-        # 1. Create the figure
         fig = Figure(figsize=(width, height), dpi=dpi)
-        
-        # 2. Add the subplot (axes) so the graph has a place to draw
         self.axes = fig.add_subplot(111)
-        
-        # 3. Initialize the Canvas
         super(MplCanvas, self).__init__(fig)
         self.setParent(parent)
-        
-        # 4. Ensure the canvas expands to fill the entire window space
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.updateGeometry()
 
