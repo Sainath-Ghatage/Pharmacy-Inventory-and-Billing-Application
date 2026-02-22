@@ -112,7 +112,7 @@ class OrdersInterface(QWidget):
         
         filter_layout = QHBoxLayout()
         self.txt_search_alert = QLineEdit()
-        self.txt_search_alert.setPlaceholderText("🔍 Search Medicine...")
+        self.txt_search_alert.setPlaceholderText("🔍 Search Product...")
         self.txt_search_alert.textChanged.connect(self.load_alerts)
         
         self.combo_type_filter = QComboBox()
@@ -134,7 +134,7 @@ class OrdersInterface(QWidget):
 
         self.alert_table = QTableWidget()
         self.alert_table.setColumnCount(6)
-        self.alert_table.setHorizontalHeaderLabels(["Select", "Medicine Name", "Type", "Stock Qty", "Expiry Date", "Status"])
+        self.alert_table.setHorizontalHeaderLabels(["Select", "Product Name", "Type", "Stock Qty", "Expiry Date", "Status"])
         self.alert_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.alert_table.setColumnWidth(0, 60)
         
@@ -146,16 +146,16 @@ class OrdersInterface(QWidget):
 
     def load_alerts(self):
         search = self.txt_search_alert.text().lower()
-        med_type = self.combo_type_filter.currentText()
+        prod_type = self.combo_type_filter.currentText()
         
         conn = database.get_connection()
         cursor = conn.cursor()
         
         query = """
-            SELECT d.med_name, d.type, SUM(s.quantity), MIN(s.exp_date)
-            FROM Medicine_Details d
-            LEFT JOIN Medicine_Stock s ON d.med_id = s.med_id
-            GROUP BY d.med_id
+            SELECT d.prod_name, d.type, SUM(s.quantity), MIN(s.exp_date)
+            FROM Product_Details d
+            LEFT JOIN Product_Stock s ON d.prod_id = s.prod_id
+            GROUP BY d.prod_id
         """
         cursor.execute(query)
         rows = cursor.fetchall()
@@ -170,7 +170,7 @@ class OrdersInterface(QWidget):
         for name, m_type, qty, exp_date_str in rows:
             if not name: continue
             if search and search not in name.lower(): continue
-            if med_type != "All Types" and med_type.lower() != str(m_type).lower(): continue
+            if prod_type != "All Types" and prod_type.lower() != str(m_type).lower(): continue
 
             qty = qty if qty is not None else 0
             
@@ -219,14 +219,14 @@ class OrdersInterface(QWidget):
                 
                 row_idx += 1
 
-    def toggle_alert_selection(self, checked, med_name, row):
+    def toggle_alert_selection(self, checked, prod_name, row):
         cell_widget = self.alert_table.cellWidget(row, 0)
         if checked:
-            self.selected_alerts.add(med_name)
+            self.selected_alerts.add(prod_name)
             if cell_widget:
                 cell_widget.setStyleSheet("background-color: #d0e1f5;")
         else:
-            self.selected_alerts.discard(med_name)
+            self.selected_alerts.discard(prod_name)
             if cell_widget:
                 cell_widget.setStyleSheet("background-color: transparent;")
 
@@ -276,12 +276,12 @@ class OrdersInterface(QWidget):
         supp_layout.addLayout(row2)
         layout.addWidget(grp_supp)
 
-        grp_add = QGroupBox("Add Medicine to Order")
+        grp_add = QGroupBox("Add Product to Order")
         add_layout = QHBoxLayout(grp_add)
         
         self.txt_new_item = QLineEdit()
-        self.txt_new_item.setPlaceholderText("Type Medicine Name...")
-        self.setup_medicine_completer() 
+        self.txt_new_item.setPlaceholderText("Type Product Name...")
+        self.setup_product_completer() 
         
         self.spin_new_qty = QSpinBox()
         self.spin_new_qty.setRange(1, 10000)
@@ -291,7 +291,7 @@ class OrdersInterface(QWidget):
         btn_add_manual.setStyleSheet(f"background-color: {COLOR_NAVBAR}; color: white; padding: 6px 15px;")
         btn_add_manual.clicked.connect(self.add_manual_item)
         
-        add_layout.addWidget(QLabel("Medicine:"))
+        add_layout.addWidget(QLabel("Product:"))
         add_layout.addWidget(self.txt_new_item)
         add_layout.addWidget(QLabel("Qty:"))
         add_layout.addWidget(self.spin_new_qty)
@@ -300,7 +300,7 @@ class OrdersInterface(QWidget):
 
         self.cart_table = QTableWidget()
         self.cart_table.setColumnCount(3)
-        self.cart_table.setHorizontalHeaderLabels(["Medicine Name", "Quantity", "Action"])
+        self.cart_table.setHorizontalHeaderLabels(["Product Name", "Quantity", "Action"])
         self.cart_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.cart_table.verticalHeader().setDefaultSectionSize(45) 
         layout.addWidget(self.cart_table)
@@ -328,14 +328,14 @@ class OrdersInterface(QWidget):
         completer.setFilterMode(Qt.MatchFlag.MatchContains) 
         self.txt_supp_name.setCompleter(completer)
 
-    def setup_medicine_completer(self):
+    def setup_product_completer(self):
         conn = database.get_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT med_name FROM Medicine_Details")
-        medicines = [row[0] for row in cursor.fetchall()]
+        cursor.execute("SELECT prod_name FROM Product_Details")
+        products = [row[0] for row in cursor.fetchall()]
         conn.close()
 
-        completer = QCompleter(medicines)
+        completer = QCompleter(products)
         completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
         completer.setFilterMode(Qt.MatchFlag.MatchContains)
         self.txt_new_item.setCompleter(completer)
@@ -359,21 +359,21 @@ class OrdersInterface(QWidget):
 
         conn = database.get_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT med_id FROM Medicine_Details WHERE med_name=?", (name,))
+        cursor.execute("SELECT prod_id FROM Product_Details WHERE prod_name=?", (name,))
         result = cursor.fetchone()
         
         if not result:
-            reply = QMessageBox.question(self, "New Medicine", 
+            reply = QMessageBox.question(self, "New Product", 
                                          f"'{name}' is not in the database.\nAdd it to database now?",
                                          QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
             if reply == QMessageBox.StandardButton.Yes:
                 try:
-                    cursor.execute("INSERT INTO Medicine_Details (med_name, type, tabs_per_strip, gst) VALUES (?, 'Unknown', 10, 12)", (name,))
-                    med_id = cursor.lastrowid
-                    cursor.execute("INSERT INTO Medicine_Stock (med_id, quantity) VALUES (?, 0)", (med_id,))
+                    cursor.execute("INSERT INTO Product_Details (prod_name, type, tabs_per_strip, gst) VALUES (?, 'Unknown', 10, 12)", (name,))
+                    prod_id = cursor.lastrowid
+                    cursor.execute("INSERT INTO Product_Stock (prod_id, quantity) VALUES (?, 0)", (prod_id,))
                     conn.commit()
                     QMessageBox.information(self, "Added", f"{name} added to database.")
-                    self.setup_medicine_completer() 
+                    self.setup_product_completer() 
                 except Exception as e:
                     QMessageBox.critical(self, "Error", str(e))
                     conn.close()
@@ -455,12 +455,12 @@ class OrdersInterface(QWidget):
                 msg_text = f"Order #{po_id} Created!"
             
             for name, qty in self.order_cart.items():
-                cursor.execute("SELECT Med_id FROM Medicine_Details WHERE Med_name=?", (name,))
-                med_res = cursor.fetchone()
+                cursor.execute("SELECT prod_id FROM Product_Details WHERE prod_name=?", (name,))
+                prod_res = cursor.fetchone()
                 
-                if med_res:
-                    med_id = med_res[0]
-                    cursor.execute("INSERT INTO PO_item (po_id, Med_id, Quantity) VALUES (?, ?, ?)", (po_id, med_id, qty))
+                if prod_res:
+                    prod_id = prod_res[0]
+                    cursor.execute("INSERT INTO PO_item (po_id, Prod_id, Quantity) VALUES (?, ?, ?)", (po_id, prod_id, qty))
             
             conn.commit()
             
@@ -532,7 +532,7 @@ class OrdersInterface(QWidget):
         elements.append(tbl_header)
         elements.append(Spacer(1, 30))
 
-        data = [["Medicine Name", "Quantity"]]
+        data = [["Product Name", "Quantity"]]
         for name, qty in self.order_cart.items():
             data.append([name, str(qty)])
             
@@ -666,7 +666,7 @@ class OrdersInterface(QWidget):
 
         self.prev_items_table = QTableWidget()
         self.prev_items_table.setColumnCount(2)
-        self.prev_items_table.setHorizontalHeaderLabels(["Medicine", "Qty"])
+        self.prev_items_table.setHorizontalHeaderLabels(["Product", "Qty"])
         self.prev_items_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         prev_layout.addWidget(self.prev_items_table)
         
@@ -717,9 +717,9 @@ class OrdersInterface(QWidget):
         cursor = conn.cursor()
         
         cursor.execute("""
-            SELECT d.Med_name, pi.Quantity 
+            SELECT d.prod_name, pi.Quantity 
             FROM PO_item pi 
-            JOIN Medicine_Details d ON pi.Med_id = d.Med_id
+            JOIN Product_Details d ON pi.Prod_id = d.prod_id
             WHERE pi.po_id = ?
         """, (po_id,))
         items = cursor.fetchall()
@@ -759,9 +759,9 @@ class OrdersInterface(QWidget):
         conn = database.get_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT d.Med_name, pi.Quantity 
+            SELECT d.prod_name, pi.Quantity 
             FROM PO_item pi 
-            JOIN Medicine_Details d ON pi.Med_id = d.Med_id
+            JOIN Product_Details d ON pi.Prod_id = d.prod_id
             WHERE pi.po_id = ?
         """, (po_id,))
         items = cursor.fetchall()

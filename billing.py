@@ -70,7 +70,7 @@ class SingleBillTab(QWidget):
         
         self.init_ui()
         self.refresh_cache()
-        self.search_medicine("")
+        self.search_product("")
 
     def init_ui(self):
         main_layout = QHBoxLayout(self)
@@ -83,25 +83,25 @@ class SingleBillTab(QWidget):
         left_layout = QVBoxLayout(left_panel)
         left_layout.setContentsMargins(15, 15, 15, 15)
 
-        lbl_search = QLabel("Find Medicine")
+        lbl_search = QLabel("Find Product")
         lbl_search.setStyleSheet(f"color: {COLOR_NAVBAR}; font-size: 16px; font-weight: bold;")
         left_layout.addWidget(lbl_search)
 
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("🔍 Type Name, ID or Batch...")
         self.search_input.setFixedHeight(40)
-        self.search_input.textChanged.connect(self.search_medicine)
+        self.search_input.textChanged.connect(self.search_product)
         left_layout.addWidget(self.search_input)
 
         self.match_list = QListWidget()
         self.match_list.setStyleSheet("border: 1px solid #ccc; color: black; background-color: white;")
-        self.match_list.itemClicked.connect(self.select_medicine_from_list)
+        self.match_list.itemClicked.connect(self.select_product_from_list)
         left_layout.addWidget(self.match_list)
 
         self.detail_frame = QFrame()
         self.detail_frame.setStyleSheet("background-color: #f8f9fa; border-radius: 5px; padding: 10px; border: 1px solid #ddd;")
         det_layout = QVBoxLayout(self.detail_frame)
-        self.lbl_sel_name = QLabel("No Medicine Selected")
+        self.lbl_sel_name = QLabel("No Product Selected")
         self.lbl_sel_name.setStyleSheet(f"font-size: 16px; font-weight: bold; color: {COLOR_NAVBAR}; border: none;")
         self.lbl_sel_info = QLabel("Batch: - | Stock: - | Rack: -")
         self.lbl_sel_info.setStyleSheet("font-size: 12px; border: none; color: black;")
@@ -125,8 +125,8 @@ class SingleBillTab(QWidget):
         self.btn_add.clicked.connect(self.add_to_cart)
         self.btn_add.setStyleSheet(f"background-color: {COLOR_NAVBAR}; color: white; font-weight: bold; border-radius: 5px;")
         
-        l1=QLabel("Strips:"); l1.setStyleSheet("color:black;"); action_layout.addWidget(l1, 0, 0); action_layout.addWidget(self.spin_strips, 0, 1)
-        l2=QLabel("Tablets:"); l2.setStyleSheet("color:black;"); action_layout.addWidget(l2, 0, 2); action_layout.addWidget(self.spin_loose, 0, 3)
+        l1=QLabel("Strips/Boxes:"); l1.setStyleSheet("color:black;"); action_layout.addWidget(l1, 0, 0); action_layout.addWidget(self.spin_strips, 0, 1)
+        l2=QLabel("Units/Loose:"); l2.setStyleSheet("color:black;"); action_layout.addWidget(l2, 0, 2); action_layout.addWidget(self.spin_loose, 0, 3)
         l3=QLabel("Disc %:"); l3.setStyleSheet("color:black;"); action_layout.addWidget(l3, 1, 0); action_layout.addWidget(self.spin_disc, 1, 1)
         action_layout.addWidget(self.btn_add, 2, 0, 1, 4)
         left_layout.addLayout(action_layout)
@@ -138,17 +138,17 @@ class SingleBillTab(QWidget):
         right_layout.setContentsMargins(15, 15, 15, 15)
 
         cust_layout = QHBoxLayout()
-        self.inp_patient = QLineEdit(); self.inp_patient.setPlaceholderText("Patient Name"); self.inp_patient.setFixedHeight(35)
+        self.inp_patient = QLineEdit(); self.inp_patient.setPlaceholderText("Customer/Patient Name"); self.inp_patient.setFixedHeight(35)
         self.pat_completer = QCompleter(self.customer_names); self.pat_completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive); self.inp_patient.setCompleter(self.pat_completer)
-        self.inp_doctor = QLineEdit(); self.inp_doctor.setPlaceholderText("Doctor Name"); self.inp_doctor.setFixedHeight(35)
+        self.inp_doctor = QLineEdit(); self.inp_doctor.setPlaceholderText("Doctor/Reference Name"); self.inp_doctor.setFixedHeight(35)
         self.doc_completer = QCompleter(self.doctor_names); self.doc_completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive); self.inp_doctor.setCompleter(self.doc_completer)
-        cust_layout.addWidget(QLabel("Patient:")); cust_layout.addWidget(self.inp_patient, 1)
-        cust_layout.addWidget(QLabel("Doctor:")); cust_layout.addWidget(self.inp_doctor, 1)
+        cust_layout.addWidget(QLabel("Customer:")); cust_layout.addWidget(self.inp_patient, 1)
+        cust_layout.addWidget(QLabel("Reference:")); cust_layout.addWidget(self.inp_doctor, 1)
         right_layout.addLayout(cust_layout)
 
         self.table = QTableWidget()
         self.table.setColumnCount(9)
-        self.table.setHorizontalHeaderLabels(["Medicine Name", "Batch", "Exp", "Qty", "Rate", "GST", "Disc", "Total", "Del"])
+        self.table.setHorizontalHeaderLabels(["Product Name", "Batch", "Exp", "Qty", "Rate", "GST", "Disc", "Total", "Del"])
         
         # --- FIX: Ensure the table is scrollable and column 0 isn't squeezed ---
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents) # Allows Name to expand
@@ -191,22 +191,22 @@ class SingleBillTab(QWidget):
             self.doc_completer.model().setStringList(self.doctor_names)
         finally: conn.close()
         
-        # --- NEW: Refresh the medicine search list to show updated stock instantly ---
-        self.search_medicine(self.search_input.text())
+        # --- NEW: Refresh the product search list to show updated stock instantly ---
+        self.search_product(self.search_input.text())
 
-    def search_medicine(self, text):
+    def search_product(self, text):
         self.match_list.clear()
         conn = database.get_connection()
         cursor = conn.cursor()
-        query = """SELECT d.med_name, s.batch_no, s.quantity, s.sale_rate, s.exp_date, 
-                   d.rack_no, d.type, s.stock_id, d.med_id, d.gst, d.uses, d.tabs_per_strip
-                   FROM Medicine_Details d JOIN Medicine_Stock s ON d.med_id = s.med_id
-                   WHERE (d.med_name LIKE ? OR s.batch_no LIKE ?) AND s.quantity > 0 ORDER BY s.exp_date ASC"""
+        query = """SELECT d.prod_name, s.batch_no, s.quantity, s.sale_rate, s.exp_date, 
+                   d.rack_no, d.type, s.stock_id, d.prod_id, d.gst, d.uses, d.tabs_per_strip
+                   FROM Product_Details d JOIN Product_Stock s ON d.prod_id = s.prod_id
+                   WHERE (d.prod_name LIKE ? OR s.batch_no LIKE ?) AND s.quantity > 0 ORDER BY s.exp_date ASC"""
         st = f"%{text}%"; cursor.execute(query, (st, st)); rows = cursor.fetchall(); conn.close()
         
         today = datetime.date.today()
         for r in rows:
-            name, batch, qty, rate, exp, rack, mtype, sid, mid, gst, uses, tps = r
+            name, batch, qty, rate, exp, rack, mtype, sid, pid, gst, uses, tps = r
             tps = int(tps) if tps else 1
             rate = float(rate or 0)
             
@@ -224,7 +224,7 @@ class SingleBillTab(QWidget):
             item = QListWidgetItem(text_label)
             item.setData(Qt.ItemDataRole.UserRole, {
                 "name": name, "batch": batch, "qty": qty, "unit_price": rate, 
-                "exp": exp, "rack": rack, "stock_id": sid, "med_id": mid, 
+                "exp": exp, "rack": rack, "stock_id": sid, "prod_id": pid, 
                 "gst": gst, "uses": uses, "tabs_per_strip": tps
             })
             
@@ -235,7 +235,7 @@ class SingleBillTab(QWidget):
                 item.setForeground(QBrush(QColor("black")))
             self.match_list.addItem(item)
 
-    def select_medicine_from_list(self, item):
+    def select_product_from_list(self, item):
         self.load_preview(item.data(Qt.ItemDataRole.UserRole))
 
     def load_preview(self, data):
@@ -244,8 +244,8 @@ class SingleBillTab(QWidget):
         self.lbl_sel_name.setText(data['name'])
         
         if tps > 1:
-            self.lbl_sel_info.setText(f"Batch: {data['batch']} | Rack: {data['rack']}\nPrice: ₹{up*tps:.2f}/Strip (₹{up:.2f}/Tab)")
-            self.lbl_conversion.setText(f"1 Strip = {tps} Tablets"); self.spin_loose.setEnabled(True)
+            self.lbl_sel_info.setText(f"Batch: {data['batch']} | Rack: {data['rack']}\nPrice: ₹{up*tps:.2f}/Strip (₹{up:.2f}/Unit)")
+            self.lbl_conversion.setText(f"1 Strip = {tps} Units"); self.spin_loose.setEnabled(True)
         else:
             self.lbl_sel_info.setText(f"Batch: {data['batch']} | Rack: {data['rack']}\nPrice: ₹{up:.2f}/Unit")
             self.lbl_conversion.setText("Unit Item"); self.spin_loose.setEnabled(False); self.spin_loose.setValue(0)
@@ -268,7 +268,7 @@ class SingleBillTab(QWidget):
         qty_str = f"{self.spin_strips.value()}s + {self.spin_loose.value()}l" if tps > 1 else str(total_units)
         
         item = {
-            "stock_id": data['stock_id'], "med_id": data['med_id'], "name": data['name'],
+            "stock_id": data['stock_id'], "prod_id": data['prod_id'], "name": data['name'],
             "batch": data['batch'], "exp": data['exp'], "qty_total": total_units, "qty_disp": qty_str,
             "unit_rate": data['unit_price'], "strip_rate": data['unit_price'] * tps,
             "gst": data.get('gst', 0), "disc": disc, "total": price - disc, 
@@ -331,13 +331,13 @@ class SingleBillTab(QWidget):
             self.inp_patient.setText(head[0]); self.inp_doctor.setText(head[1]); self.cmb_payment.setCurrentText(head[2])
             self.spin_paid.setValue(head[3] if head[3] else 0)
             
-            cursor.execute("""SELECT bi.Med_id, bi.quantity, bi.total_price, m.med_name, m.gst, m.tabs_per_strip, m.rack_no
-                              FROM Bill_Item bi JOIN Medicine_Details m ON bi.Med_id = m.med_id WHERE bi.Bill_id = ?""", (bill_id,))
+            cursor.execute("""SELECT bi.Prod_id, bi.quantity, bi.total_price, m.prod_name, m.gst, m.tabs_per_strip, m.rack_no
+                              FROM Bill_Item bi JOIN Product_Details m ON bi.Prod_id = m.prod_id WHERE bi.Bill_id = ?""", (bill_id,))
             items = cursor.fetchall()
             
             self.cart_items = []
-            for mid, qty, total, name, gst, tps, rack in items:
-                cursor.execute("SELECT stock_id, batch_no, exp_date, quantity, sale_rate FROM Medicine_Stock WHERE med_id=? LIMIT 1", (mid,))
+            for pid, qty, total, name, gst, tps, rack in items:
+                cursor.execute("SELECT stock_id, batch_no, exp_date, quantity, sale_rate FROM Product_Stock WHERE prod_id=? LIMIT 1", (pid,))
                 stock = cursor.fetchone()
                 if not stock: continue # Skip if stock definition gone
                 
@@ -347,10 +347,10 @@ class SingleBillTab(QWidget):
                 
                 # Reconstruct Item
                 self.cart_items.append({
-                    "stock_id": sid, "med_id": mid, "name": name, "batch": batch, "exp": exp,
+                    "stock_id": sid, "prod_id": pid, "name": name, "batch": batch, "exp": exp,
                     "qty_total": qty, "qty_disp": qty_disp, "unit_rate": unit_rate,
                     "strip_rate": unit_rate * tps, "gst": gst, "disc": 0, "total": total,
-                    "raw_data": {"stock_id": sid, "med_id": mid, "name": name, "batch": batch, "qty": curr_qty, 
+                    "raw_data": {"stock_id": sid, "prod_id": pid, "name": name, "batch": batch, "qty": curr_qty, 
                                  "unit_price": unit_rate, "exp": exp, "rack": rack, "tabs_per_strip": tps, "gst": gst},
                     "is_strip": tps > 1
                 })
@@ -366,9 +366,9 @@ class SingleBillTab(QWidget):
         credit = total - paid
         pat_input = self.inp_patient.text().strip()
         
-        # --- Check if balance is 1 Rupee or more, AND patient name is empty ---
+        # --- Check if balance is 1 Rupee or more, AND customer name is empty ---
         if credit >= 1.0 and not pat_input:
-            QMessageBox.warning(self, "Patient Name Required", "Balance cannot be credited as the patient name is not inserted.")
+            QMessageBox.warning(self, "Customer Name Required", "Balance cannot be credited as the customer name is not inserted.")
             return
 
         pat = pat_input or "Walk-in"
@@ -379,10 +379,10 @@ class SingleBillTab(QWidget):
             # --- RESTORE STOCK IF EDITING ---
             if self.editing_bill_id:
                 # 1. Restore old quantities
-                cursor.execute("SELECT Med_id, quantity FROM Bill_Item WHERE Bill_id=?", (self.editing_bill_id,))
+                cursor.execute("SELECT Prod_id, quantity FROM Bill_Item WHERE Bill_id=?", (self.editing_bill_id,))
                 old_items = cursor.fetchall()
-                for mid, qty in old_items:
-                    cursor.execute("UPDATE Medicine_Stock SET quantity = quantity + ? WHERE med_id=?", (qty, mid))
+                for pid, qty in old_items:
+                    cursor.execute("UPDATE Product_Stock SET quantity = quantity + ? WHERE prod_id=?", (qty, pid))
                 
                 # 2. Adjust Customer Balance (Reverse old credit)
                 cursor.execute("SELECT balance, total_sum, paid_amount FROM Bill WHERE Bill_id=?", (self.editing_bill_id,))
@@ -402,9 +402,9 @@ class SingleBillTab(QWidget):
             bid = cursor.lastrowid
             
             for it in self.cart_items:
-                cursor.execute("INSERT INTO Bill_Item (Bill_id, Med_id, quantity, unit_price, total_price) VALUES (?, ?, ?, ?, ?)", 
-                               (bid, it['med_id'], it['qty_total'], it['unit_rate'], it['total']))
-                cursor.execute("UPDATE Medicine_Stock SET quantity = quantity - ? WHERE stock_id=?", (it['qty_total'], it['stock_id']))
+                cursor.execute("INSERT INTO Bill_Item (Bill_id, Prod_id, quantity, unit_price, total_price) VALUES (?, ?, ?, ?, ?)", 
+                               (bid, it['prod_id'], it['qty_total'], it['unit_rate'], it['total']))
+                cursor.execute("UPDATE Product_Stock SET quantity = quantity - ? WHERE stock_id=?", (it['qty_total'], it['stock_id']))
             
             if credit > 0.01 and pat != "Walk-in":
                 cursor.execute("SELECT Cust_id FROM Customer WHERE Name=?", (pat,))
@@ -478,7 +478,7 @@ class SingleBillTab(QWidget):
                 
                 <table width='100%' style='font-size: 11px;'>
                     <tr><td align='left'><b>Bill No:</b> {bid}</td><td align='right'><b>Date:</b> {now_str}</td></tr>
-                    <tr><td align='left'><b>Patient:</b> {pat}</td><td align='right'><b>Doctor:</b> {doc[:15]}</td></tr>
+                    <tr><td align='left'><b>Customer:</b> {pat}</td><td align='right'><b>Ref:</b> {doc[:15]}</td></tr>
                 </table>
                 
                 <hr style='border-top: 1px dashed black; margin: 10px 0;'>
@@ -510,7 +510,7 @@ class SingleBillTab(QWidget):
                 </table>
                 
                 <hr style='border-top: 1px dashed black; margin: 10px 0;'>
-                <center><i style='font-size: 11px;'>Thank You! Wishing you a speedy recovery.</i></center>
+                <center><i style='font-size: 11px;'>Thank You! Visit Again.</i></center>
             </div>
             """
             
@@ -528,7 +528,7 @@ class SingleBillTab(QWidget):
             
             <table width='100%' style='margin-bottom: 10px;'>
                 <tr><td><b>Bill No:</b> {bid}</td><td align='right'><b>Date:</b> {now_str}</td></tr>
-                <tr><td><b>Patient:</b> {pat}</td><td align='right'><b>Doctor:</b> {doc}</td></tr>
+                <tr><td><b>Customer:</b> {pat}</td><td align='right'><b>Ref:</b> {doc}</td></tr>
             </table>
             
             <table width='100%' cellspacing='0' cellpadding='5' border='1' style='border-collapse: collapse; text-align: left;'>
@@ -567,7 +567,7 @@ class SingleBillTab(QWidget):
             if bal > 0: 
                 html += f"<tr><td align='right' style='color: red;'><b>Due Balance: ₹{bal:.2f}</b></td></tr>"
                 
-            html += "</table><br><br><center><i>Thank You! Wishing you a speedy recovery.</i></center></div>"
+            html += "</table><br><br><center><i>Thank You! Visit Again.</i></center></div>"
         
         printer = QPrinter()
         if "Thermal" in printer_type:

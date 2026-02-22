@@ -16,11 +16,11 @@ def init_db():
     if not conn: return
     cursor = conn.cursor()
 
-    # --- 1. MEDICINE DETAILS ---
+    # --- 1. PRODUCT DETAILS ---
     cursor.execute("""
-    CREATE TABLE IF NOT EXISTS Medicine_Details (
-        med_id INTEGER PRIMARY KEY AUTOINCREMENT,
-        med_name TEXT NOT NULL,
+    CREATE TABLE IF NOT EXISTS Product_Details (
+        prod_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        prod_name TEXT NOT NULL,
         manufacturer TEXT,
         hsn_code TEXT,
         gst REAL DEFAULT 0,
@@ -31,11 +31,11 @@ def init_db():
     )
     """)
 
-    # --- 2. MEDICINE STOCK ---
+    # --- 2. PRODUCT STOCK ---
     cursor.execute("""
-    CREATE TABLE IF NOT EXISTS Medicine_Stock (
+    CREATE TABLE IF NOT EXISTS Product_Stock (
         stock_id INTEGER PRIMARY KEY AUTOINCREMENT,
-        med_id INTEGER,
+        prod_id INTEGER,
         purchase_rate REAL,
         sale_rate REAL,
         rate_per_tab REAL,
@@ -44,7 +44,7 @@ def init_db():
         exp_date TEXT, 
         batch_no TEXT,
         discount REAL DEFAULT 0,
-        FOREIGN KEY (med_id) REFERENCES Medicine_Details(med_id)
+        FOREIGN KEY (prod_id) REFERENCES Product_Details(prod_id)
     )
     """)
 
@@ -80,7 +80,7 @@ def init_db():
     CREATE TABLE IF NOT EXISTS Bill_Item (
         item_id INTEGER PRIMARY KEY AUTOINCREMENT,
         Bill_id INTEGER,
-        Med_id INTEGER,
+        Prod_id INTEGER,
         quantity INTEGER,
         unit_price REAL,
         total_price REAL,
@@ -130,10 +130,10 @@ def init_db():
     CREATE TABLE IF NOT EXISTS PO_item (
         item_id INTEGER PRIMARY KEY AUTOINCREMENT,
         po_id INTEGER,
-        Med_id INTEGER,
+        Prod_id INTEGER,
         Quantity INTEGER,
         FOREIGN KEY (po_id) REFERENCES Purchase_order(po_id),
-        FOREIGN KEY (Med_id) REFERENCES Medicine_Details(med_id)
+        FOREIGN KEY (Prod_id) REFERENCES Product_Details(prod_id)
     )
     """)
 
@@ -157,7 +157,7 @@ def init_db():
     CREATE TABLE IF NOT EXISTS Purchase_Invoice_Item (
         pi_item_id INTEGER PRIMARY KEY AUTOINCREMENT,
         invoice_id INTEGER,
-        Med_id INTEGER,
+        Prod_id INTEGER,
         batch_no TEXT,
         expiry_date TEXT,
         quantity REAL,
@@ -168,7 +168,7 @@ def init_db():
         mrp REAL,
         total_amount REAL,
         FOREIGN KEY (invoice_id) REFERENCES Purchase_Invoice(invoice_id),
-        FOREIGN KEY (Med_id) REFERENCES Medicine_Details(med_id)
+        FOREIGN KEY (Prod_id) REFERENCES Product_Details(prod_id)
     )
     """)
 
@@ -217,13 +217,13 @@ def init_db():
     CREATE TABLE IF NOT EXISTS Purchase_Return_Item (
         pr_item_id INTEGER PRIMARY KEY AUTOINCREMENT,
         return_id INTEGER,
-        Med_id INTEGER,
+        Prod_id INTEGER,
         batch_no TEXT,
         expiry_date TEXT,
         return_qty REAL,
         return_amount REAL,
         FOREIGN KEY (return_id) REFERENCES Purchase_Return(return_id),
-        FOREIGN KEY (Med_id) REFERENCES Medicine_Details(med_id)
+        FOREIGN KEY (Prod_id) REFERENCES Product_Details(prod_id)
     )
     """)
 
@@ -232,9 +232,9 @@ def init_db():
 
 # --- HELPER FUNCTIONS ---
 
-def get_all_medicines():
+def get_all_products():
     """
-    Returns a joined view of Medicine Details and Stock for the UI.
+    Returns a joined view of Product Details and Stock for the UI.
     """
     conn = get_connection()
     if not conn: return []
@@ -242,8 +242,8 @@ def get_all_medicines():
     
     query = """
         SELECT 
-            d.med_id, 
-            d.med_name, 
+            d.prod_id, 
+            d.prod_name, 
             d.tabs_per_strip, 
             s.rate_per_tab, 
             s.quantity, 
@@ -257,9 +257,9 @@ def get_all_medicines():
             d.gst, 
             s.discount, 
             '' as barcode
-        FROM Medicine_Details d
-        LEFT JOIN Medicine_Stock s ON d.med_id = s.med_id
-        ORDER BY d.med_name ASC
+        FROM Product_Details d
+        LEFT JOIN Product_Stock s ON d.prod_id = s.prod_id
+        ORDER BY d.prod_name ASC
     """
     cursor.execute(query)
     rows = cursor.fetchall()

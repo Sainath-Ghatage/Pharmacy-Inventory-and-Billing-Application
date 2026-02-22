@@ -102,10 +102,10 @@ def ensure_schema_update():
     if not conn: return
     cursor = conn.cursor()
     try:
-        cursor.execute("PRAGMA table_info(Medicine_Stock)")
+        cursor.execute("PRAGMA table_info(Product_Stock)")
         columns = [info[1] for info in cursor.fetchall()]
         if "min_qty" not in columns:
-            cursor.execute("ALTER TABLE Medicine_Stock ADD COLUMN min_qty INTEGER DEFAULT 10")
+            cursor.execute("ALTER TABLE Product_Stock ADD COLUMN min_qty INTEGER DEFAULT 10")
             conn.commit()
     except Exception as e:
         print(f"DB Update Error: {e}")
@@ -113,9 +113,9 @@ def ensure_schema_update():
         conn.close()
 
 # ==========================================
-# 1. MEDICINE DETAILS FORM (Add & Edit)
+# 1. PRODUCT DETAILS FORM (Add & Edit)
 # ==========================================
-class MedicineDetailsForm(QWidget):
+class ProductDetailsForm(QWidget):
     saved = pyqtSignal()
     canceled = pyqtSignal()
 
@@ -129,7 +129,7 @@ class MedicineDetailsForm(QWidget):
         main_layout = QVBoxLayout(self)
         main_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        self.group_box = QGroupBox("Register New Medicine Details")
+        self.group_box = QGroupBox("Register New Product Details")
         self.group_box.setFixedWidth(600)
         
         layout = QVBoxLayout(self.group_box)
@@ -151,7 +151,7 @@ class MedicineDetailsForm(QWidget):
         self.tabs_per.setRange(0, 1000)
         self.uses = QLineEdit()
 
-        form.addRow("Medicine Name:", self.name)
+        form.addRow("Product Name:", self.name)
         form.addRow("Manufacturer:", self.mfg)
         form.addRow("HSN Code:", self.hsn)
         form.addRow("Type:", self.type)
@@ -181,8 +181,8 @@ class MedicineDetailsForm(QWidget):
 
     def load_for_edit(self, data):
         self.edit_mode_id = data['id']
-        self.group_box.setTitle("Edit Medicine Details")
-        self.btn_save.setText("Update Medicine")
+        self.group_box.setTitle("Edit Product Details")
+        self.btn_save.setText("Update Product")
         self.name.setText(str(data['name']))
         self.mfg.setText(str(data['mfg']))
         self.hsn.setText(str(data['hsn']))
@@ -198,7 +198,7 @@ class MedicineDetailsForm(QWidget):
 
     def clear_fields(self):
         self.edit_mode_id = None
-        self.group_box.setTitle("Register New Medicine Details")
+        self.group_box.setTitle("Register New Product Details")
         self.btn_save.setText("Save Details")
         self.name.clear(); self.mfg.clear(); self.hsn.clear(); self.rack.clear()
         self.gst.setValue(12.0); self.tabs_per.setValue(0); self.uses.clear()
@@ -213,14 +213,14 @@ class MedicineDetailsForm(QWidget):
         try:
             if self.edit_mode_id:
                 cursor.execute("""
-                    UPDATE Medicine_Details 
-                    SET med_name=?, manufacturer=?, hsn_code=?, gst=?, rack_no=?, type=?, tabs_per_strip=?, uses=?
-                    WHERE med_id=?
+                    UPDATE Product_Details 
+                    SET prod_name=?, manufacturer=?, hsn_code=?, gst=?, rack_no=?, type=?, tabs_per_strip=?, uses=?
+                    WHERE prod_id=?
                 """, (self.name.text(), self.mfg.text(), self.hsn.text(), self.gst.value(), 
                       self.rack.text(), self.type.currentText(), self.tabs_per.value(), self.uses.text(), self.edit_mode_id))
             else:
                 cursor.execute("""
-                    INSERT INTO Medicine_Details (med_name, manufacturer, hsn_code, gst, rack_no, type, tabs_per_strip, uses)
+                    INSERT INTO Product_Details (prod_name, manufacturer, hsn_code, gst, rack_no, type, tabs_per_strip, uses)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """, (self.name.text(), self.mfg.text(), self.hsn.text(), self.gst.value(), 
                       self.rack.text(), self.type.currentText(), self.tabs_per.value(), self.uses.text()))
@@ -234,9 +234,9 @@ class MedicineDetailsForm(QWidget):
             conn.close()
 
 # ==========================================
-# 2. MEDICINE MASTER VIEW (The "Medicines" Tab)
+# 2. PRODUCT MASTER VIEW (The "Products" Tab)
 # ==========================================
-class MedicineMasterView(QWidget):
+class ProductMasterView(QWidget):
     request_edit = pyqtSignal(dict)
 
     def __init__(self):
@@ -249,7 +249,7 @@ class MedicineMasterView(QWidget):
         layout.setContentsMargins(10, 20, 10, 10)
         
         top_bar = QHBoxLayout()
-        lbl_search = QLabel("Search Medicine:")
+        lbl_search = QLabel("Search Product:")
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("Type name to search...")
         self.search_input.textChanged.connect(self.load_data)
@@ -300,25 +300,25 @@ class MedicineMasterView(QWidget):
         if not conn: return
         cursor = conn.cursor()
         
-        query = "SELECT * FROM Medicine_Details"
+        query = "SELECT * FROM Product_Details"
         params = []
         if search_text:
-            query += " WHERE med_name LIKE ?"
+            query += " WHERE prod_name LIKE ?"
             params.append(f"%{search_text}%")
-        query += " ORDER BY med_name ASC"
+        query += " ORDER BY prod_name ASC"
             
         cursor.execute(query, params)
         rows = cursor.fetchall()
         
         for row_data in rows:
-            med_id, name, mfg, hsn, gst, rack, med_type, tabs, uses = row_data
+            prod_id, name, mfg, hsn, gst, rack, prod_type, tabs, uses = row_data
             
             full_data = {
-                'id': med_id, 'name': name, 'mfg': mfg, 'hsn': hsn, 'gst': gst,
-                'rack': rack, 'type': med_type, 'tabs': tabs, 'uses': uses
+                'id': prod_id, 'name': name, 'mfg': mfg, 'hsn': hsn, 'gst': gst,
+                'rack': rack, 'type': prod_type, 'tabs': tabs, 'uses': uses
             }
             
-            display_items = [str(med_id), name, med_type, rack, mfg, hsn, str(gst), ""]
+            display_items = [str(prod_id), name, prod_type, rack, mfg, hsn, str(gst), ""]
             
             row_idx = self.table.rowCount()
             self.table.insertRow(row_idx)
@@ -336,7 +336,7 @@ class MedicineMasterView(QWidget):
                     
                     btn_del = QPushButton("Del")
                     btn_del.setStyleSheet(f"background-color: {COLOR_DELETE}; color: white; border: none; border-radius: 3px; padding: 6px 12px; font-weight: bold;")
-                    btn_del.clicked.connect(lambda _, mid=med_id: self.delete_medicine(mid))
+                    btn_del.clicked.connect(lambda _, pid=prod_id: self.delete_product(pid))
                     
                     hbox.addWidget(btn_edit)
                     hbox.addWidget(btn_del)
@@ -348,17 +348,17 @@ class MedicineMasterView(QWidget):
                     self.table.setItem(row_idx, i, item)
         conn.close()
 
-    def delete_medicine(self, med_id):
-        reply = QMessageBox.warning(self, "Delete Medicine", 
-                                    "Deleting this medicine will also DELETE ALL STOCK associated with it.\n\nAre you sure?", 
+    def delete_product(self, prod_id):
+        reply = QMessageBox.warning(self, "Delete Product", 
+                                    "Deleting this product will also DELETE ALL STOCK associated with it.\n\nAre you sure?", 
                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         
         if reply == QMessageBox.StandardButton.Yes:
             conn = database.get_connection()
             try:
                 cursor = conn.cursor()
-                cursor.execute("DELETE FROM Medicine_Stock WHERE med_id = ?", (med_id,))
-                cursor.execute("DELETE FROM Medicine_Details WHERE med_id = ?", (med_id,))
+                cursor.execute("DELETE FROM Product_Stock WHERE prod_id = ?", (prod_id,))
+                cursor.execute("DELETE FROM Product_Details WHERE prod_id = ?", (prod_id,))
                 conn.commit()
                 self.load_data(self.search_input.text())
             except Exception as e:
@@ -369,7 +369,7 @@ class MedicineMasterView(QWidget):
 # ==========================================
 # 3. STOCK FORM (Editing existing stock)
 # ==========================================
-class MedicineStockForm(QWidget):
+class ProductStockForm(QWidget):
     saved = pyqtSignal()
     canceled = pyqtSignal()
 
@@ -427,7 +427,7 @@ class MedicineStockForm(QWidget):
         self.exp_date = QLineEdit()
         self.exp_date.setPlaceholderText("MM/YY")
 
-        form.addRow("Medicine:", self.name_input)
+        form.addRow("Product:", self.name_input)
         form.addRow("Batch No:", self.batch)
         form.addRow("Stock (Strips):", self.spin_strips)
         form.addRow("Stock (Loose):", self.spin_loose)
@@ -507,7 +507,7 @@ class MedicineStockForm(QWidget):
         try:
             if self.edit_mode_id:
                 cursor.execute("""
-                    UPDATE Medicine_Stock 
+                    UPDATE Product_Stock 
                     SET batch_no=?, quantity=?, min_qty=?, purchase_rate=?, sale_rate=?, mfg_date=?, exp_date=?
                     WHERE stock_id=?
                 """, (self.batch.text(), total_units, self.min_qty.value(), 
@@ -546,7 +546,7 @@ class StockInterface(QWidget):
         dash_layout.setSpacing(15)
         
         # 1. Register Button
-        self.btn_register = QPushButton("+ Register New Medicine")
+        self.btn_register = QPushButton("+ Register New Product")
         self.btn_register.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_register.setStyleSheet(f"""
             QPushButton {{
@@ -594,24 +594,24 @@ class StockInterface(QWidget):
         
         stock_layout.addWidget(self.inner_stock_tabs)
         
-        # --- Tab B: Medicines ---
-        self.master_view = MedicineMasterView()
-        self.master_view.request_edit.connect(self.goto_edit_medicine)
+        # --- Tab B: Products ---
+        self.master_view = ProductMasterView()
+        self.master_view.request_edit.connect(self.goto_edit_product)
 
         self.main_tabs.addTab(self.tab_stock_widget, "Stock Dashboard")
-        self.main_tabs.addTab(self.master_view, "Medicines")
+        self.main_tabs.addTab(self.master_view, "Products")
         
         dash_layout.addWidget(self.main_tabs)
         self.stack.addWidget(self.page_dashboard)
 
         # === PAGE 1: DETAILS FORM ===
-        self.details_form = MedicineDetailsForm()
+        self.details_form = ProductDetailsForm()
         self.details_form.saved.connect(self.on_form_success)
         self.details_form.canceled.connect(lambda: self.stack.setCurrentIndex(0))
         self.stack.addWidget(self.details_form)
 
         # === PAGE 2: STOCK FORM ===
-        self.stock_form = MedicineStockForm()
+        self.stock_form = ProductStockForm()
         self.stock_form.saved.connect(self.on_form_success)
         self.stock_form.canceled.connect(lambda: self.stack.setCurrentIndex(0))
         self.stack.addWidget(self.stock_form)
@@ -644,7 +644,7 @@ class StockInterface(QWidget):
         for i in range(2, 11):
             header.setSectionResizeMode(i, QHeaderView.ResizeMode.Fixed)
 
-    def goto_edit_medicine(self, data):
+    def goto_edit_product(self, data):
         self.details_form.load_for_edit(data)
         self.stack.setCurrentIndex(1)
 
@@ -664,11 +664,11 @@ class StockInterface(QWidget):
         cursor = conn.cursor()
         
         cursor.execute("""
-            SELECT s.stock_id, d.med_name, d.type, d.rack_no, s.batch_no, s.quantity, s.min_qty,
+            SELECT s.stock_id, d.prod_name, d.type, d.rack_no, s.batch_no, s.quantity, s.min_qty,
                    s.purchase_rate, s.sale_rate, s.mfg_date, s.exp_date, d.tabs_per_strip
-            FROM Medicine_Details d
-            JOIN Medicine_Stock s ON d.med_id = s.med_id
-            ORDER BY d.med_name ASC
+            FROM Product_Details d
+            JOIN Product_Stock s ON d.prod_id = s.prod_id
+            ORDER BY d.prod_name ASC
         """)
         rows = cursor.fetchall()
         today = date.today()
@@ -794,7 +794,7 @@ class StockInterface(QWidget):
             conn = database.get_connection()
             try:
                 cursor = conn.cursor()
-                cursor.execute("DELETE FROM Medicine_Stock WHERE stock_id = ?", (stock_id,))
+                cursor.execute("DELETE FROM Product_Stock WHERE stock_id = ?", (stock_id,))
                 conn.commit()
                 self.load_data()
             except Exception as e:

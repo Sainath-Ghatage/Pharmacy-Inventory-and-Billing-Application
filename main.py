@@ -241,7 +241,7 @@ class MainWindow(QWidget):
 
         # 2. INVENTORY
         add_header("Inventory && Procurement")
-        add_nav_btn("Inventory", "Medicine Stock")
+        add_nav_btn("Inventory", "Product Stock")
         add_nav_btn("Purchase Entry", "Purchase Invoice") 
         add_nav_btn("Purchase Returns", "Purchase Returns")
         add_nav_btn("Orders", "Purchase Orders")
@@ -445,21 +445,21 @@ class MainWindow(QWidget):
 
         try:
             # 1. Low Stock Check (Dynamically checks min_qty)
-            cursor.execute("PRAGMA table_info(Medicine_Stock)")
+            cursor.execute("PRAGMA table_info(Product_Stock)")
             cols = [c[1] for c in cursor.fetchall()]
             
             if "min_qty" in cols:
                 cursor.execute("""
-                    SELECT d.med_name 
-                    FROM Medicine_Details d
-                    JOIN Medicine_Stock s ON d.med_id = s.med_id
+                    SELECT d.prod_name 
+                    FROM Product_Details d
+                    JOIN Product_Stock s ON d.prod_id = s.prod_id
                     WHERE s.quantity <= s.min_qty
                 """)
             else:
                 cursor.execute("""
-                    SELECT d.med_name 
-                    FROM Medicine_Details d
-                    JOIN Medicine_Stock s ON d.med_id = s.med_id
+                    SELECT d.prod_name 
+                    FROM Product_Details d
+                    JOIN Product_Stock s ON d.prod_id = s.prod_id
                     WHERE s.quantity < 10
                 """)
                 
@@ -474,9 +474,9 @@ class MainWindow(QWidget):
             today = datetime.datetime.now().date()
 
             cursor.execute("""
-                SELECT d.med_name, s.exp_date 
-                FROM Medicine_Details d
-                JOIN Medicine_Stock s ON d.med_id = s.med_id
+                SELECT d.prod_name, s.exp_date 
+                FROM Product_Details d
+                JOIN Product_Stock s ON d.prod_id = s.prod_id
             """)
             all_stock = cursor.fetchall()
             

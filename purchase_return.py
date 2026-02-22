@@ -173,7 +173,7 @@ class PurchaseReturnInterface(QWidget):
         # --- Middle Section: Items Table ---
         self.table = QTableWidget()
         self.table.setColumnCount(6)
-        self.table.setHorizontalHeaderLabels(["Medicine Name", "Batch No", "Expiry (MM/YY)", "Return Qty", "Return Amount (₹)", "Action"])
+        self.table.setHorizontalHeaderLabels(["Product Name", "Batch No", "Expiry (MM/YY)", "Return Qty", "Return Amount (₹)", "Action"])
         
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
@@ -303,7 +303,7 @@ class PurchaseReturnInterface(QWidget):
     # =========================================================
     def load_initial_data(self):
         self.suppliers = []
-        self.medicines_cache = []
+        self.products_cache = []
 
         conn = database.get_connection()
         if not conn: return
@@ -317,8 +317,8 @@ class PurchaseReturnInterface(QWidget):
         for supp_id, name in self.suppliers:
             self.cmb_supplier.addItem(name, supp_id)
 
-        cursor.execute("SELECT med_id, med_name FROM Medicine_Details ORDER BY med_name")
-        self.medicines_cache = cursor.fetchall()
+        cursor.execute("SELECT prod_id, prod_name FROM Product_Details ORDER BY prod_name")
+        self.products_cache = cursor.fetchall()
         
         conn.close()
         self.load_history()
@@ -335,19 +335,19 @@ class PurchaseReturnInterface(QWidget):
         self.table.insertRow(row)
         self.table.setRowHeight(row, 45)
 
-        cmb_med = QComboBox()
-        cmb_med.setEditable(True)
-        cmb_med.setPlaceholderText("Type Medicine Name")
-        cmb_med.addItem("", None)
-        for med_id, name in self.medicines_cache:
-            cmb_med.addItem(name, med_id)
+        cmb_prod = QComboBox()
+        cmb_prod.setEditable(True)
+        cmb_prod.setPlaceholderText("Type Product Name")
+        cmb_prod.addItem("", None)
+        for prod_id, name in self.products_cache:
+            cmb_prod.addItem(name, prod_id)
         
-        completer = QCompleter([name for _, name in self.medicines_cache])
+        completer = QCompleter([name for _, name in self.products_cache])
         completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
         completer.setFilterMode(Qt.MatchFlag.MatchContains)
-        cmb_med.setCompleter(completer)
-        cmb_med.currentIndexChanged.connect(lambda _, r=row: self.on_med_selected(r))
-        self.table.setCellWidget(row, 0, cmb_med)
+        cmb_prod.setCompleter(completer)
+        cmb_prod.currentIndexChanged.connect(lambda _, r=row: self.on_prod_selected(r))
+        self.table.setCellWidget(row, 0, cmb_prod)
 
         cmb_batch = QComboBox()
         cmb_batch.setPlaceholderText("Select Batch")
@@ -390,32 +390,32 @@ class PurchaseReturnInterface(QWidget):
             except: pass
             btn.clicked.connect(lambda _, r=i: self.remove_row(r))
             
-            cmb_med = self.table.cellWidget(i, 0)
-            try: cmb_med.currentIndexChanged.disconnect()
+            cmb_prod = self.table.cellWidget(i, 0)
+            try: cmb_prod.currentIndexChanged.disconnect()
             except: pass
-            cmb_med.currentIndexChanged.connect(lambda _, r=i: self.on_med_selected(r))
+            cmb_prod.currentIndexChanged.connect(lambda _, r=i: self.on_prod_selected(r))
             
             cmb_batch = self.table.cellWidget(i, 1)
             try: cmb_batch.currentIndexChanged.disconnect()
             except: pass
             cmb_batch.currentIndexChanged.connect(lambda _, r=i: self.on_batch_selected(r))
 
-    def on_med_selected(self, row):
-        cmb_med = self.table.cellWidget(row, 0)
-        med_id = cmb_med.currentData()
+    def on_prod_selected(self, row):
+        cmb_prod = self.table.cellWidget(row, 0)
+        prod_id = cmb_prod.currentData()
         
         cmb_batch = self.table.cellWidget(row, 1)
         cmb_batch.clear()
         
-        if not med_id: return
+        if not prod_id: return
 
         conn = database.get_connection()
         cursor = conn.cursor()
         cursor.execute("""
             SELECT batch_no, quantity, exp_date, purchase_rate 
-            FROM Medicine_Stock 
-            WHERE med_id = ? AND quantity > 0
-        """, (med_id,))
+            FROM Product_Stock 
+            WHERE prod_id = ? AND quantity > 0
+        """, (prod_id,))
         batches = cursor.fetchall()
         conn.close()
 
@@ -506,8 +506,8 @@ class PurchaseReturnInterface(QWidget):
         items_to_save = []
         
         for i in range(self.table.rowCount()):
-            cmb_med = self.table.cellWidget(i, 0)
-            med_id = cmb_med.currentData()
+            cmb_prod = self.table.cellWidget(i, 0)
+            prod_id = cmb_prod.currentData()
             
             cmb_batch = self.table.cellWidget(i, 1)
             batch_data = cmb_batch.currentData()
@@ -515,7 +515,7 @@ class PurchaseReturnInterface(QWidget):
             qty = self.table.cellWidget(i, 3).value()
             amt = self.table.cellWidget(i, 4).value()
             
-            if not med_id or not batch_data:
+            if not prod_id or not batch_data:
                 continue 
             
             if qty <= 0:
@@ -523,7 +523,7 @@ class PurchaseReturnInterface(QWidget):
                 return
 
             items_to_save.append({
-                "med_id": med_id,
+                "prod_id": prod_id,
                 "batch": batch_data['batch'],
                 "exp": batch_data['exp'],
                 "qty": qty,
@@ -546,10 +546,10 @@ class PurchaseReturnInterface(QWidget):
                     old_bal, old_supp = old_ret
                     cursor.execute("UPDATE Supplier SET balance = balance + ? WHERE Supp_id=?", (old_bal, old_supp))
                 
-                cursor.execute("SELECT Med_id, batch_no, return_qty FROM Purchase_Return_Item WHERE return_id=?", (self.editing_return_id,))
+                cursor.execute("SELECT Prod_id, batch_no, return_qty FROM Purchase_Return_Item WHERE return_id=?", (self.editing_return_id,))
                 old_items = cursor.fetchall()
-                for mid, b_no, o_qty in old_items:
-                    cursor.execute("UPDATE Medicine_Stock SET quantity = quantity + ? WHERE med_id=? AND batch_no=?", (o_qty, mid, b_no))
+                for pid, b_no, o_qty in old_items:
+                    cursor.execute("UPDATE Product_Stock SET quantity = quantity + ? WHERE prod_id=? AND batch_no=?", (o_qty, pid, b_no))
                 
                 cursor.execute("DELETE FROM Purchase_Return_Item WHERE return_id=?", (self.editing_return_id,))
                 
@@ -578,15 +578,15 @@ class PurchaseReturnInterface(QWidget):
             # --- APPLY NEW ITEMS ---
             for item in items_to_save:
                 cursor.execute("""
-                    INSERT INTO Purchase_Return_Item (return_id, Med_id, batch_no, expiry_date, return_qty, return_amount)
+                    INSERT INTO Purchase_Return_Item (return_id, Prod_id, batch_no, expiry_date, return_qty, return_amount)
                     VALUES (?, ?, ?, ?, ?, ?)
-                """, (return_id, item['med_id'], item['batch'], item['exp'], item['qty'], item['amt']))
+                """, (return_id, item['prod_id'], item['batch'], item['exp'], item['qty'], item['amt']))
                 
                 cursor.execute("""
-                    UPDATE Medicine_Stock 
+                    UPDATE Product_Stock 
                     SET quantity = quantity - ? 
-                    WHERE med_id = ? AND batch_no = ?
-                """, (item['qty'], item['med_id'], item['batch']))
+                    WHERE prod_id = ? AND batch_no = ?
+                """, (item['qty'], item['prod_id'], item['batch']))
 
             # Deduct only the balance from the supplier
             cursor.execute("UPDATE Supplier SET balance = balance - ? WHERE Supp_id = ?", (balance, supp_id))
@@ -702,9 +702,9 @@ class PurchaseReturnInterface(QWidget):
         r_no, supp_id, r_date, p_mode, a_rec = ret_data
         
         cursor.execute("""
-            SELECT d.med_id, d.med_name, i.batch_no, i.return_qty, i.return_amount, i.expiry_date
+            SELECT d.prod_id, d.prod_name, i.batch_no, i.return_qty, i.return_amount, i.expiry_date
             FROM Purchase_Return_Item i
-            JOIN Medicine_Details d ON i.Med_id = d.med_id
+            JOIN Product_Details d ON i.Prod_id = d.prod_id
             WHERE i.return_id=?
         """, (return_id,))
         items = cursor.fetchall()
@@ -724,13 +724,13 @@ class PurchaseReturnInterface(QWidget):
         self.inp_received.setValue(a_rec if a_rec else 0.0)
         
         self.table.setRowCount(0)
-        for med_id, m_name, batch, qty, amt, exp in items:
+        for prod_id, p_name, batch, qty, amt, exp in items:
             row = self.table.rowCount()
             self.add_row()
             
-            cmb_med = self.table.cellWidget(row, 0)
-            idx_m = cmb_med.findData(med_id)
-            if idx_m >= 0: cmb_med.setCurrentIndex(idx_m)
+            cmb_prod = self.table.cellWidget(row, 0)
+            idx_m = cmb_prod.findData(prod_id)
+            if idx_m >= 0: cmb_prod.setCurrentIndex(idx_m)
             
             cmb_batch = self.table.cellWidget(row, 1)
             # Find the batch in the combo
@@ -764,16 +764,16 @@ class PurchaseReturnInterface(QWidget):
         r_no, supp_id, date, total, s_name, s_addr = master
         
         cursor.execute("""
-            SELECT d.med_name, i.batch_no, i.expiry_date, i.return_qty, i.return_amount
+            SELECT d.prod_name, i.batch_no, i.expiry_date, i.return_qty, i.return_amount
             FROM Purchase_Return_Item i
-            JOIN Medicine_Details d ON i.Med_id = d.med_id
+            JOIN Product_Details d ON i.Prod_id = d.prod_id
             WHERE i.return_id = ?
         """, (return_id,))
         items_db = cursor.fetchall()
         
         items_fmt = []
         for n, b, e, q, a in items_db:
-            items_fmt.append({"med_name": n, "batch": b, "exp": e, "qty": q, "amt": a})
+            items_fmt.append({"prod_name": n, "batch": b, "exp": e, "qty": q, "amt": a})
             
         conn.close()
         self.generate_pdf(return_id, r_no, supp_id, items_fmt, total, date, supplier_name=s_name, supplier_addr=s_addr)
@@ -824,11 +824,11 @@ class PurchaseReturnInterface(QWidget):
             elements.append(t_info)
             elements.append(Spacer(1, 20))
             
-            data_items = [["Medicine Name", "Batch", "Expiry", "Qty", "Amount (Rs)"]]
+            data_items = [["Product Name", "Batch", "Expiry", "Qty", "Amount (Rs)"]]
             for item in items:
-                m_name = item.get('med_name') if 'med_name' in item else self.get_med_name(item['med_id'])
+                p_name = item.get('prod_name') if 'prod_name' in item else self.get_prod_name(item['prod_id'])
                 data_items.append([
-                    m_name,
+                    p_name,
                     item['batch'],
                     item['exp'],
                     str(item['qty']),
@@ -860,9 +860,9 @@ class PurchaseReturnInterface(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "PDF Error", str(e))
 
-    def get_med_name(self, med_id):
-        for mid, name in self.medicines_cache:
-            if mid == med_id: return name
+    def get_prod_name(self, prod_id):
+        for pid, name in self.products_cache:
+            if pid == prod_id: return name
         return "Unknown"
 
 if __name__ == "__main__":

@@ -225,11 +225,11 @@ class SalesInterface(QWidget):
         cursor.execute("SELECT patient_name, doctor_name, bill_date, total_sum, payment_method, paid_amount, balance FROM Bill WHERE Bill_id=?", (bill_id,))
         header = cursor.fetchone()
         
-        # 2. Fetch Items (Fixed JOIN to Medicine_Details)
+        # 2. Fetch Items (Fixed JOIN to Product_Details)
         cursor.execute("""
-            SELECT m.med_name, bi.quantity, bi.total_price
+            SELECT p.prod_name, bi.quantity, bi.total_price
             FROM Bill_Item bi
-            JOIN Medicine_Details m ON bi.Med_id = m.med_id
+            JOIN Product_Details p ON bi.Prod_id = p.prod_id
             WHERE bi.Bill_id = ?
         """, (bill_id,))
         items = cursor.fetchall()
@@ -270,16 +270,16 @@ class SalesInterface(QWidget):
             conn = database.get_connection()
             cur = conn.cursor()
             try:
-                # Restore stock (Naive approach: find any stock with matching med_id and add to it)
-                cur.execute("SELECT Med_id, quantity FROM Bill_Item WHERE Bill_id=?", (self.current_bill_id,))
+                # Restore stock (Naive approach: find any stock with matching prod_id and add to it)
+                cur.execute("SELECT Prod_id, quantity FROM Bill_Item WHERE Bill_id=?", (self.current_bill_id,))
                 items = cur.fetchall()
                 
-                for mid, qty in items:
+                for pid, qty in items:
                     # Find a batch to restore to (Limit 1)
-                    cur.execute("SELECT stock_id FROM Medicine_Stock WHERE med_id=? LIMIT 1", (mid,))
+                    cur.execute("SELECT stock_id FROM Product_Stock WHERE prod_id=? LIMIT 1", (pid,))
                     stock_res = cur.fetchone()
                     if stock_res:
-                        cur.execute("UPDATE Medicine_Stock SET quantity = quantity + ? WHERE stock_id=?", (qty, stock_res[0]))
+                        cur.execute("UPDATE Product_Stock SET quantity = quantity + ? WHERE stock_id=?", (qty, stock_res[0]))
                 
                 cur.execute("DELETE FROM Bill_Item WHERE Bill_id=?", (self.current_bill_id,))
                 cur.execute("DELETE FROM Bill WHERE Bill_id=?", (self.current_bill_id,))

@@ -135,18 +135,18 @@ class PurchaseEntryInterface(QWidget):
         self.setStyleSheet(STYLE_SHEET)
         self.setMinimumSize(1000, 700)
         
-        self.med_names = [] 
-        self.load_medicine_names()
+        self.prod_names = [] 
+        self.load_product_names()
         
         self.init_ui()
         self.load_suppliers()
 
-    def load_medicine_names(self):
+    def load_product_names(self):
         conn = database.get_connection()
         cur = conn.cursor()
         try:
-            cur.execute("SELECT med_name FROM Medicine_Details")
-            self.med_names = [row[0] for row in cur.fetchall()]
+            cur.execute("SELECT prod_name FROM Product_Details")
+            self.prod_names = [row[0] for row in cur.fetchall()]
         except: pass
         finally: conn.close()
 
@@ -239,14 +239,14 @@ class PurchaseEntryInterface(QWidget):
         self.table = QTableWidget()
         self.table.setColumnCount(9) 
         headers = [
-            "Medicine Name", "Batch", "Mfg", "Exp", 
+            "Product Name", "Batch", "Mfg", "Exp", 
             "Qty", "Buy Rate", "MRP", "Total", "Action"
         ]
         self.table.setHorizontalHeaderLabels(headers)
         
         # Column Resizing Logic
         header = self.table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch) # Medicine Name stretches
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch) # Product Name stretches
         
         # Set fixed widths for small columns to prevent squashing
         self.table.setColumnWidth(1, 100) # Batch
@@ -389,7 +389,7 @@ class PurchaseEntryInterface(QWidget):
         
         self.det_table = QTableWidget()
         self.det_table.setColumnCount(4)
-        self.det_table.setHorizontalHeaderLabels(["Medicine", "Batch", "Qty", "Total"])
+        self.det_table.setHorizontalHeaderLabels(["Product", "Batch", "Qty", "Total"])
         self.det_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.det_table.verticalHeader().setDefaultSectionSize(35)
         det_layout.addWidget(self.det_table)
@@ -440,9 +440,9 @@ class PurchaseEntryInterface(QWidget):
         conn = database.get_connection()
         cur = conn.cursor()
         cur.execute("""
-            SELECT d.med_name, i.batch_no, i.quantity, i.total_amount
+            SELECT d.prod_name, i.batch_no, i.quantity, i.total_amount
             FROM Purchase_Invoice_Item i
-            JOIN Medicine_Details d ON i.Med_id = d.med_id
+            JOIN Product_Details d ON i.Prod_id = d.prod_id
             WHERE i.invoice_id = ?
         """, (inv_id,))
         items = cur.fetchall()
@@ -464,7 +464,7 @@ class PurchaseEntryInterface(QWidget):
         
         name_edit = QLineEdit()
         name_edit.setPlaceholderText("Search...")
-        completer = QCompleter(self.med_names)
+        completer = QCompleter(self.prod_names)
         completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
         name_edit.setCompleter(completer)
         name_edit.editingFinished.connect(lambda: self.on_name_entered(rc, name_edit))
@@ -488,7 +488,7 @@ class PurchaseEntryInterface(QWidget):
         if not name: return
         conn = database.get_connection()
         cur = conn.cursor()
-        cur.execute("SELECT med_id FROM Medicine_Details WHERE med_name = ?", (name,))
+        cur.execute("SELECT prod_id FROM Product_Details WHERE prod_name = ?", (name,))
         res = cur.fetchone()
         conn.close()
         
@@ -529,7 +529,7 @@ class PurchaseEntryInterface(QWidget):
         df.columns = df.columns.astype(str).str.lower().str.strip()
         
         # Mappings
-        map_name = ['medicine', 'medicine name', 'name', 'item', 'description', 'product']
+        map_name = ['product', 'product name', 'name', 'item', 'description', 'medicine']
         map_qty = ['qty', 'quantity', 'count', 'units', 'pieces']
         map_price = ['price', 'rate', 'cost', 'buy rate', 'p.price', 'purchase price']
         map_mrp = ['mrp', 'sale price', 'selling price']
@@ -540,14 +540,14 @@ class PurchaseEntryInterface(QWidget):
         col_mrp = next((c for c in map_mrp if c in df.columns), None)
 
         if not col_name:
-            QMessageBox.warning(self, "Error", "Could not find a 'Medicine Name' column.")
+            QMessageBox.warning(self, "Error", "Could not find a 'Product Name' column.")
             return
 
         conn = database.get_connection()
         cur = conn.cursor()
 
         for index, row in df.iterrows():
-            med_name = str(row[col_name]).strip()
+            prod_name = str(row[col_name]).strip()
             qty = str(row[col_qty]) if col_qty else "0"
             price = str(row[col_price]) if col_price else "0"
             mrp = str(row[col_mrp]) if col_mrp else "0"
@@ -556,9 +556,9 @@ class PurchaseEntryInterface(QWidget):
             self.add_row()
 
             widget_name = self.table.cellWidget(r, 0)
-            widget_name.setText(med_name)
+            widget_name.setText(prod_name)
 
-            cur.execute("SELECT med_id FROM Medicine_Details WHERE med_name = ?", (med_name,))
+            cur.execute("SELECT prod_id FROM Product_Details WHERE prod_name = ?", (prod_name,))
             res = cur.fetchone()
             if res:
                 dummy_item = QTableWidgetItem()
@@ -603,9 +603,9 @@ class PurchaseEntryInterface(QWidget):
                 self.cmb_supplier.setEditText(supp_row[0])
 
         cur.execute("""
-            SELECT d.med_name, pi.Quantity
+            SELECT d.prod_name, pi.Quantity
             FROM PO_item pi
-            JOIN Medicine_Details d ON pi.Med_id = d.Med_id
+            JOIN Product_Details d ON pi.Prod_id = d.prod_id
             WHERE pi.po_id = ?
         """, (po_id,))
         items = cur.fetchall()
@@ -613,11 +613,11 @@ class PurchaseEntryInterface(QWidget):
 
         self.table.setRowCount(0)
         
-        for med_name, qty in items:
+        for prod_name, qty in items:
             r = self.table.rowCount()
             self.add_row()
             widget_name = self.table.cellWidget(r, 0)
-            widget_name.setText(med_name)
+            widget_name.setText(prod_name)
             self.on_name_entered(r, widget_name)
             self.table.setItem(r, 4, QTableWidgetItem(str(qty)))
             self.on_cell_changed(r, 4)
@@ -717,12 +717,12 @@ class PurchaseEntryInterface(QWidget):
                 if not name_widget or not name_widget.text(): continue
                 
                 dummy = self.table.item(r, 0)
-                med_id = dummy.data(Qt.ItemDataRole.UserRole) if dummy else None
+                prod_id = dummy.data(Qt.ItemDataRole.UserRole) if dummy else None
                 
-                if not med_id:
-                    cur.execute("SELECT med_id FROM Medicine_Details WHERE med_name=?", (name_widget.text().strip(),))
+                if not prod_id:
+                    cur.execute("SELECT prod_id FROM Product_Details WHERE prod_name=?", (name_widget.text().strip(),))
                     res = cur.fetchone()
-                    if res: med_id = res[0]
+                    if res: prod_id = res[0]
                     else:
                         QMessageBox.warning(self, "Error", f"Row {r+1}: Product '{name_widget.text()}' not found in DB.")
                         return
@@ -741,7 +741,7 @@ class PurchaseEntryInterface(QWidget):
                         QMessageBox.warning(self, "Error", f"Row {r+1}: Batch and Expiry are required.")
                         return
 
-                    cur.execute("SELECT tabs_per_strip FROM Medicine_Details WHERE med_id = ?", (med_id,))
+                    cur.execute("SELECT tabs_per_strip FROM Product_Details WHERE prod_id = ?", (prod_id,))
                     res = cur.fetchone()
                     tabs_per_strip = int(res[0]) if res and res[0] else 1
                     
@@ -755,7 +755,7 @@ class PurchaseEntryInterface(QWidget):
                         final_mrp_unit = mrp_per_strip
 
                     rows_to_save.append({
-                        "med_id": med_id, 
+                        "prod_id": prod_id, 
                         "batch": batch, "mfg": mfg, "exp": exp,
                         "qty_units": final_qty_units, 
                         "rate_unit": final_rate_unit, 
@@ -780,24 +780,24 @@ class PurchaseEntryInterface(QWidget):
             for row in rows_to_save:
                 cur.execute("""
                     INSERT INTO Purchase_Invoice_Item 
-                    (invoice_id, Med_id, batch_no, expiry_date, quantity, purchase_rate_incl, mrp, total_amount)
+                    (invoice_id, Prod_id, batch_no, expiry_date, quantity, purchase_rate_incl, mrp, total_amount)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, (inv_id, row['med_id'], row['batch'], row['exp'], row['qty_units'], row['rate_unit'], row['mrp_unit'], row['total']))
+                """, (inv_id, row['prod_id'], row['batch'], row['exp'], row['qty_units'], row['rate_unit'], row['mrp_unit'], row['total']))
                 
-                cur.execute("SELECT stock_id FROM Medicine_Stock WHERE med_id = ? AND batch_no = ?", (row['med_id'], row['batch']))
+                cur.execute("SELECT stock_id FROM Product_Stock WHERE prod_id = ? AND batch_no = ?", (row['prod_id'], row['batch']))
                 existing = cur.fetchone()
                 
                 if existing:
                     cur.execute("""
-                        UPDATE Medicine_Stock 
+                        UPDATE Product_Stock 
                         SET quantity = quantity + ?, purchase_rate = ?, sale_rate = ?, rate_per_tab = ? 
                         WHERE stock_id = ?
                     """, (row['qty_units'], row['rate_unit'], row['mrp_strip'], row['mrp_unit'], existing[0]))
                 else:
                     cur.execute("""
-                        INSERT INTO Medicine_Stock (med_id, batch_no, mfg_date, exp_date, quantity, purchase_rate, sale_rate, rate_per_tab) 
+                        INSERT INTO Product_Stock (prod_id, batch_no, mfg_date, exp_date, quantity, purchase_rate, sale_rate, rate_per_tab) 
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (row['med_id'], row['batch'], row['mfg'], row['exp'], row['qty_units'], row['rate_unit'], row['mrp_strip'], row['mrp_unit']))
+                    """, (row['prod_id'], row['batch'], row['mfg'], row['exp'], row['qty_units'], row['rate_unit'], row['mrp_strip'], row['mrp_unit']))
 
             if balance_amt != 0:
                 cur.execute("UPDATE Supplier SET balance = balance + ? WHERE Supp_id = ?", (balance_amt, supp_id))

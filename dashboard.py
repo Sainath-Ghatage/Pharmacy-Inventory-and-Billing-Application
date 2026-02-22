@@ -169,13 +169,13 @@ class DashboardInterface(QWidget):
         # 3. Low Stock Check
         try:
             # Check if min_qty column exists to avoid crash, fallback to 10 if not
-            cursor.execute("PRAGMA table_info(Medicine_Stock)")
+            cursor.execute("PRAGMA table_info(Product_Stock)")
             cols = [c[1] for c in cursor.fetchall()]
             
             if "min_qty" in cols:
-                cursor.execute("SELECT COUNT(*) FROM Medicine_Stock WHERE quantity <= min_qty")
+                cursor.execute("SELECT COUNT(*) FROM Product_Stock WHERE quantity <= min_qty")
             else:
-                cursor.execute("SELECT COUNT(*) FROM Medicine_Stock WHERE quantity < 10")
+                cursor.execute("SELECT COUNT(*) FROM Product_Stock WHERE quantity < 10")
                 
             low_count = cursor.fetchone()[0]
             self.update_card(self.card_stock, str(low_count), "Items to Order")
@@ -184,7 +184,7 @@ class DashboardInterface(QWidget):
 
         # 4. Expiry Check (Handling MM/YY format accurately)
         try:
-            cursor.execute("SELECT exp_date FROM Medicine_Stock")
+            cursor.execute("SELECT exp_date FROM Product_Stock")
             exp_count = 0
             for row in cursor.fetchall():
                 exp = row[0]

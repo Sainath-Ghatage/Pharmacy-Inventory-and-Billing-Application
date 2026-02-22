@@ -244,112 +244,112 @@ class ReportsInterface(QWidget):
 
             elif report_name == "Product Wise Sales":
                 query = """
-                    SELECT m.med_name, SUM(bi.quantity), SUM(bi.total_price) 
+                    SELECT m.prod_name, SUM(bi.quantity), SUM(bi.total_price) 
                     FROM Bill_Item bi
                     JOIN Bill b ON bi.Bill_id = b.Bill_id
-                    JOIN Medicine_Details m ON bi.Med_id = m.med_id
+                    JOIN Product_Details m ON bi.Prod_id = m.prod_id
                     WHERE date(b.bill_date) BETWEEN ? AND ?
-                    GROUP BY m.med_name ORDER BY SUM(bi.quantity) DESC
+                    GROUP BY m.prod_name ORDER BY SUM(bi.quantity) DESC
                 """
-                self.run_table_query(cursor, query, (d_from, d_to), ["Medicine Name", "Qty Sold", "Revenue"])
+                self.run_table_query(cursor, query, (d_from, d_to), ["Product Name", "Qty Sold", "Revenue"])
 
             # === STOCK REPORTS ===
             elif report_name == "Current Stock Report":
                 query = """
-                    SELECT d.med_name, d.type, d.rack_no, 
+                    SELECT d.prod_name, d.type, d.rack_no, 
                            CASE WHEN d.tabs_per_strip > 1 THEN 
                                (CAST(IFNULL(SUM(s.quantity),0) AS INTEGER) / d.tabs_per_strip) || 's + ' || (CAST(IFNULL(SUM(s.quantity),0) AS INTEGER) % d.tabs_per_strip) || 't'
                            ELSE 
                                IFNULL(SUM(s.quantity), 0) || ' Units'
                            END
-                    FROM Medicine_Details d 
-                    LEFT JOIN Medicine_Stock s ON d.med_id = s.med_id 
-                    GROUP BY d.med_id ORDER BY d.med_name
+                    FROM Product_Details d 
+                    LEFT JOIN Product_Stock s ON d.prod_id = s.prod_id 
+                    GROUP BY d.prod_id ORDER BY d.prod_name
                 """
-                self.run_table_query(cursor, query, None, ["Medicine", "Type", "Rack", "Total Qty"])
+                self.run_table_query(cursor, query, None, ["Product", "Type", "Rack", "Total Qty"])
 
             elif report_name == "Batch Wise Stock":
                 query = """
-                    SELECT d.med_name, s.batch_no, s.exp_date, s.quantity, s.purchase_rate, s.sale_rate 
-                    FROM Medicine_Stock s 
-                    JOIN Medicine_Details d ON s.med_id = d.med_id 
+                    SELECT d.prod_name, s.batch_no, s.exp_date, s.quantity, s.purchase_rate, s.sale_rate 
+                    FROM Product_Stock s 
+                    JOIN Product_Details d ON s.prod_id = d.prod_id 
                     ORDER BY s.exp_date ASC
                 """
-                self.run_table_query(cursor, query, None, ["Medicine", "Batch", "Expiry", "Total Tabs", "Buy Rate", "Sell Rate"])
+                self.run_table_query(cursor, query, None, ["Product", "Batch", "Expiry", "Total Units", "Buy Rate", "Sell Rate"])
 
             elif report_name == "Rack Wise Stock":
                 query = """
-                    SELECT d.rack_no, d.med_name, 
+                    SELECT d.rack_no, d.prod_name, 
                            CASE WHEN d.tabs_per_strip > 1 THEN 
                                (CAST(IFNULL(SUM(s.quantity),0) AS INTEGER) / d.tabs_per_strip) || 's + ' || (CAST(IFNULL(SUM(s.quantity),0) AS INTEGER) % d.tabs_per_strip) || 't'
                            ELSE 
                                IFNULL(SUM(s.quantity), 0) || ' Units'
                            END
-                    FROM Medicine_Details d 
-                    LEFT JOIN Medicine_Stock s ON d.med_id = s.med_id 
+                    FROM Product_Details d 
+                    LEFT JOIN Product_Stock s ON d.prod_id = s.prod_id 
                     WHERE d.rack_no IS NOT NULL AND d.rack_no != '' 
-                    GROUP BY d.med_id ORDER BY d.rack_no
+                    GROUP BY d.prod_id ORDER BY d.rack_no
                 """
-                self.run_table_query(cursor, query, None, ["Rack No", "Medicine", "Qty"])
+                self.run_table_query(cursor, query, None, ["Rack No", "Product", "Qty"])
 
             elif report_name == "Supplier Stock Report":
                 query = """
-                    SELECT sup.Sup_name, m.med_name, SUM(pi.quantity) as purchased
+                    SELECT sup.Sup_name, m.prod_name, SUM(pi.quantity) as purchased
                     FROM Purchase_Invoice_Item pi
                     JOIN Purchase_Invoice p ON pi.invoice_id = p.invoice_id
                     JOIN Supplier sup ON p.supp_id = sup.Supp_id
-                    JOIN Medicine_Details m ON pi.Med_id = m.med_id
-                    GROUP BY sup.Sup_name, m.med_name
+                    JOIN Product_Details m ON pi.Prod_id = m.prod_id
+                    GROUP BY sup.Sup_name, m.prod_name
                 """
-                self.run_table_query(cursor, query, None, ["Supplier", "Medicine", "Total Purchased Qty"])
+                self.run_table_query(cursor, query, None, ["Supplier", "Product", "Total Purchased Qty"])
 
             elif report_name == "Slow Moving Products":
                 query = """
-                    SELECT m.med_name, m.type, IFNULL(SUM(bi.quantity), 0) as sold_qty
-                    FROM Medicine_Details m
-                    LEFT JOIN Bill_Item bi ON m.med_id = bi.Med_id
+                    SELECT m.prod_name, m.type, IFNULL(SUM(bi.quantity), 0) as sold_qty
+                    FROM Product_Details m
+                    LEFT JOIN Bill_Item bi ON m.prod_id = bi.Prod_id
                     LEFT JOIN Bill b ON bi.Bill_id = b.Bill_id AND date(b.bill_date) BETWEEN ? AND ?
-                    GROUP BY m.med_id
+                    GROUP BY m.prod_id
                     HAVING sold_qty <= 10
                     ORDER BY sold_qty ASC
                 """
-                self.run_table_query(cursor, query, (d_from, d_to), ["Medicine", "Type", "Units Sold (Within Range)"])
+                self.run_table_query(cursor, query, (d_from, d_to), ["Product", "Type", "Units Sold (Within Range)"])
 
             elif report_name == "Excess Stock (>100)":
                 query = """
-                    SELECT d.med_name, 
+                    SELECT d.prod_name, 
                            CASE WHEN d.tabs_per_strip > 1 THEN 
                                (CAST(SUM(s.quantity) AS INTEGER) / d.tabs_per_strip) || 's + ' || (CAST(SUM(s.quantity) AS INTEGER) % d.tabs_per_strip) || 't'
                            ELSE 
                                SUM(s.quantity) || ' Units'
                            END
-                    FROM Medicine_Stock s 
-                    JOIN Medicine_Details d ON s.med_id = d.med_id 
-                    GROUP BY d.med_id HAVING SUM(s.quantity) > 100
+                    FROM Product_Stock s 
+                    JOIN Product_Details d ON s.prod_id = d.prod_id 
+                    GROUP BY d.prod_id HAVING SUM(s.quantity) > 100
                     ORDER BY SUM(s.quantity) DESC
                 """
-                self.run_table_query(cursor, query, None, ["Medicine", "Stock Qty (Strips + Loose)"], show_total=False)
+                self.run_table_query(cursor, query, None, ["Product", "Stock Qty (Strips + Loose)"], show_total=False)
 
             elif report_name == "Fast Moving (Non-Stop)":
                  query = """
-                    SELECT m.med_name, COUNT(bi.item_id) as freq 
+                    SELECT m.prod_name, COUNT(bi.item_id) as freq 
                     FROM Bill_Item bi 
-                    JOIN Medicine_Details m ON bi.Med_id = m.med_id 
-                    GROUP BY m.med_id ORDER BY freq DESC LIMIT 50
+                    JOIN Product_Details m ON bi.Prod_id = m.prod_id 
+                    GROUP BY m.prod_id ORDER BY freq DESC LIMIT 50
                 """
-                 self.run_table_query(cursor, query, None, ["Medicine", "Sales Frequency"])
+                 self.run_table_query(cursor, query, None, ["Product", "Sales Frequency"])
 
             elif report_name == "Purchase Returns Details":
                  query = """
-                    SELECT date(pr.return_date), pr.return_number, s.Sup_name, m.med_name, pri.return_qty, pri.return_amount
+                    SELECT date(pr.return_date), pr.return_number, s.Sup_name, m.prod_name, pri.return_qty, pri.return_amount
                     FROM Purchase_Return_Item pri
                     JOIN Purchase_Return pr ON pri.return_id = pr.return_id
                     JOIN Supplier s ON pr.supp_id = s.Supp_id
-                    JOIN Medicine_Details m ON pri.Med_id = m.med_id
+                    JOIN Product_Details m ON pri.Prod_id = m.prod_id
                     WHERE date(pr.return_date) BETWEEN ? AND ?
                     ORDER BY pr.return_date DESC
                  """
-                 self.run_table_query(cursor, query, (d_from, d_to), ["Return Date", "Debit Note #", "Supplier", "Returned Medicine", "Qty Returned", "Return Amount"])
+                 self.run_table_query(cursor, query, (d_from, d_to), ["Return Date", "Debit Note #", "Supplier", "Returned Product", "Qty Returned", "Return Amount"])
 
             # === FINANCIALS ===
             elif report_name == "Profit & Loss (Approx)":
@@ -359,8 +359,8 @@ class ReportsInterface(QWidget):
                 cursor.execute("""
                     SELECT SUM(bi.quantity * (
                         SELECT AVG(s.purchase_rate) 
-                        FROM Medicine_Stock s 
-                        WHERE s.med_id = bi.Med_id
+                        FROM Product_Stock s 
+                        WHERE s.prod_id = bi.Prod_id
                     )) 
                     FROM Bill_Item bi 
                     JOIN Bill b ON bi.Bill_id = b.Bill_id
@@ -469,7 +469,7 @@ class ReportsInterface(QWidget):
         
         for i, h_text in enumerate(headers):
             h_lower = h_text.lower()
-            if any(x in h_lower for x in ['name', 'item', 'description', 'patient', 'doctor', 'medicine', 'supplier', 'category']):
+            if any(x in h_lower for x in ['name', 'item', 'description', 'patient', 'doctor', 'product', 'supplier', 'category']):
                 header.setSectionResizeMode(i, QHeaderView.ResizeMode.Stretch)
                 has_stretch = True
             else:
