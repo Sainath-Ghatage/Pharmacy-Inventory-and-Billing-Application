@@ -248,18 +248,28 @@ class ProductMasterView(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 20, 10, 10)
         
+        # --- NEW FILTER BAR FOR PRODUCTS TAB ---
         top_bar = QHBoxLayout()
+        
         lbl_search = QLabel("Search Product:")
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("Type name to search...")
         self.search_input.textChanged.connect(self.load_data)
         
-        btn_refresh = QPushButton("Refresh")
-        btn_refresh.clicked.connect(lambda: self.load_data(""))
+        lbl_type = QLabel("Type Filter:")
+        self.type_filter = QComboBox()
+        self.type_filter.addItems(["All Types", "Tablet", "Capsule", "Syrup", "Injection", "Cream", 
+            "Ointment", "Drops", "Personal Care & Wellness", "Spray", "Powder", "Medical Devices"])
+        self.type_filter.currentTextChanged.connect(self.load_data)
+        
+        btn_refresh = QPushButton("Clear & Refresh")
+        btn_refresh.clicked.connect(self.clear_filters_and_refresh)
         btn_refresh.setStyleSheet(f"background-color: {COLOR_NAVBAR}; color: white; padding: 6px 15px; border-radius: 4px;")
 
         top_bar.addWidget(lbl_search)
         top_bar.addWidget(self.search_input)
+        top_bar.addWidget(lbl_type)
+        top_bar.addWidget(self.type_filter)
         top_bar.addWidget(btn_refresh)
         layout.addLayout(top_bar)
         
@@ -294,31 +304,45 @@ class ProductMasterView(QWidget):
         
         layout.addWidget(self.table)
         
-    def load_data(self, search_text=""):
+    def clear_filters_and_refresh(self):
+        self.search_input.clear()
+        self.type_filter.setCurrentIndex(0)
+        self.load_data()
+
+    def load_data(self):
+        search_text = self.search_input.text().strip()
+        prod_type = self.type_filter.currentText()
+        
         self.table.setRowCount(0)
         conn = database.get_connection()
         if not conn: return
         cursor = conn.cursor()
         
-        query = "SELECT * FROM Product_Details"
+        query = "SELECT * FROM Product_Details WHERE 1=1"
         params = []
+        
         if search_text:
-            query += " WHERE prod_name LIKE ?"
+            query += " AND prod_name LIKE ?"
             params.append(f"%{search_text}%")
+            
+        if prod_type != "All Types":
+            query += " AND type = ?"
+            params.append(prod_type)
+            
         query += " ORDER BY prod_name ASC"
             
         cursor.execute(query, params)
         rows = cursor.fetchall()
         
         for row_data in rows:
-            prod_id, name, mfg, hsn, gst, rack, prod_type, tabs, uses = row_data
+            prod_id, name, mfg, hsn, gst, rack, current_prod_type, tabs, uses = row_data
             
             full_data = {
                 'id': prod_id, 'name': name, 'mfg': mfg, 'hsn': hsn, 'gst': gst,
-                'rack': rack, 'type': prod_type, 'tabs': tabs, 'uses': uses
+                'rack': rack, 'type': current_prod_type, 'tabs': tabs, 'uses': uses
             }
             
-            display_items = [str(prod_id), name, prod_type, rack, mfg, hsn, str(gst), ""]
+            display_items = [str(prod_id), name, current_prod_type, rack, mfg, hsn, str(gst), ""]
             
             row_idx = self.table.rowCount()
             self.table.insertRow(row_idx)
@@ -360,7 +384,7 @@ class ProductMasterView(QWidget):
                 cursor.execute("DELETE FROM Product_Stock WHERE prod_id = ?", (prod_id,))
                 cursor.execute("DELETE FROM Product_Details WHERE prod_id = ?", (prod_id,))
                 conn.commit()
-                self.load_data(self.search_input.text())
+                self.load_data()
             except Exception as e:
                 QMessageBox.critical(self, "Error", str(e))
             finally:
@@ -573,6 +597,31 @@ class StockInterface(QWidget):
         stock_layout = QVBoxLayout(self.tab_stock_widget)
         stock_layout.setContentsMargins(10, 10, 10, 10)
         
+        # --- NEW FILTER BAR FOR STOCK DASHBOARD ---
+        filter_bar = QHBoxLayout()
+        lbl_search = QLabel("Search:")
+        self.stock_search_input = QLineEdit()
+        self.stock_search_input.setPlaceholderText("Search by product or batch...")
+        self.stock_search_input.textChanged.connect(self.load_data)
+
+        lbl_type = QLabel("Type Filter:")
+        self.stock_type_filter = QComboBox()
+        self.stock_type_filter.addItems(["All Types", "Tablet", "Capsule", "Syrup", "Injection", "Cream", 
+            "Ointment", "Drops", "Personal Care & Wellness", "Spray", "Powder", "Medical Devices"])
+        self.stock_type_filter.currentTextChanged.connect(self.load_data)
+
+        btn_stock_refresh = QPushButton("Clear & Refresh")
+        btn_stock_refresh.clicked.connect(self.clear_stock_filters)
+        btn_stock_refresh.setStyleSheet(f"background-color: {COLOR_NAVBAR}; color: white; padding: 6px 15px; border-radius: 4px;")
+
+        filter_bar.addWidget(lbl_search)
+        filter_bar.addWidget(self.stock_search_input)
+        filter_bar.addWidget(lbl_type)
+        filter_bar.addWidget(self.stock_type_filter)
+        filter_bar.addWidget(btn_stock_refresh)
+        
+        stock_layout.addLayout(filter_bar)
+        
         self.inner_stock_tabs = QTabWidget()
         self.inner_stock_tabs.setStyleSheet("QTabWidget::pane { border: none; }")
         
@@ -618,6 +667,11 @@ class StockInterface(QWidget):
 
         self.main_layout.addWidget(self.stack)
 
+    def clear_stock_filters(self):
+        self.stock_search_input.clear()
+        self.stock_type_filter.setCurrentIndex(0)
+        self.load_data()
+
     def setup_table(self, table, columns, is_expiry_table=False):
         table.setColumnCount(len(columns))
         table.setHorizontalHeaderLabels(columns)
@@ -655,6 +709,9 @@ class StockInterface(QWidget):
         self.stock_updated.emit()
 
     def load_data(self):
+        search_text = self.stock_search_input.text().strip()
+        prod_type = self.stock_type_filter.currentText()
+        
         self.table_all.setRowCount(0)
         self.table_low.setRowCount(0)
         self.table_exp.setRowCount(0)
@@ -663,13 +720,26 @@ class StockInterface(QWidget):
         if not conn: return
         cursor = conn.cursor()
         
-        cursor.execute("""
+        query = """
             SELECT s.stock_id, d.prod_name, d.type, d.rack_no, s.batch_no, s.quantity, s.min_qty,
                    s.purchase_rate, s.sale_rate, s.mfg_date, s.exp_date, d.tabs_per_strip
             FROM Product_Details d
             JOIN Product_Stock s ON d.prod_id = s.prod_id
-            ORDER BY d.prod_name ASC
-        """)
+            WHERE 1=1
+        """
+        params = []
+        
+        if search_text:
+            query += " AND (d.prod_name LIKE ? OR s.batch_no LIKE ?)"
+            params.extend([f"%{search_text}%", f"%{search_text}%"])
+            
+        if prod_type != "All Types":
+            query += " AND d.type = ?"
+            params.append(prod_type)
+            
+        query += " ORDER BY d.prod_name ASC"
+        
+        cursor.execute(query, params)
         rows = cursor.fetchall()
         today = date.today()
 
@@ -736,7 +806,9 @@ class StockInterface(QWidget):
                 self.add_row_exp(self.table_exp, items_exp, days_left)
                 
         conn.close()
-        self.master_view.load_data()
+        
+        # We shouldn't call master_view.load_data() endlessly if this was triggered by its own filter 
+        # so it's safer to not cross-call unless we are saving new data. 
 
     def add_row_std(self, table, display_list, full_data):
         row = table.rowCount()
