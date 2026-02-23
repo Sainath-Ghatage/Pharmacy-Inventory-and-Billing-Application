@@ -26,7 +26,7 @@ executables = [
 # 4. Run setup
 setup(
     name="PharmacyApp",
-    version="1.0",
+    version="2.3.0",
     description="Pharmacy Management System",
     options={"build_exe": build_exe_options},
     executables=executables
