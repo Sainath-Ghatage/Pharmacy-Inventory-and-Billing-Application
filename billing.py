@@ -418,22 +418,27 @@ class SingleBillTab(QWidget):
         cur = conn.cursor()
         
         try:
-            cur.execute("SELECT p_name, phone, email, location, GSTIN, printer_type FROM Pharmacy LIMIT 1")
+            # Added license_no and fssai_no
+            cur.execute("SELECT p_name, phone, email, location, GSTIN, printer_type, license_no, fssai_no FROM Pharmacy LIMIT 1")
             ph = cur.fetchone()
         except sqlite3.OperationalError:
             cur.execute("SELECT p_name, phone, email, location, GSTIN FROM Pharmacy LIMIT 1")
             ph = cur.fetchone()
-            ph = ph + ("Thermal Printer (80mm/58mm)",) if ph else None
+            ph = ph + ("Thermal Printer (80mm/58mm)", "", "") if ph else None
             
         conn.close()
         
-        shop = ph[0] if ph else "PHARMACY"
-        phone = ph[1] if ph else ""
-        email = ph[2] if ph else ""
-        addr = ph[3] if ph else ""
-        gstin_val = ph[4] if ph else ""
-        
+        shop = ph[0] if ph and ph[0] else "PHARMACY"
+        phone = ph[1] if ph and ph[1] else ""
+        email = ph[2] if ph and ph[2] else ""
+        addr = ph[3] if ph and ph[3] else ""
+        gstin_val = ph[4] if ph and ph[4] else ""
         printer_type = ph[5] if ph and len(ph) > 5 and ph[5] else "Thermal Printer (80mm/58mm)"
+        
+        # Extract the new license details
+        drug_license = ph[6] if ph and len(ph) > 6 and ph[6] else ""
+        fssai_no = ph[7] if ph and len(ph) > 7 and ph[7] else ""
+        
         now_str = datetime.datetime.now().strftime('%d-%m-%Y %H:%M')
         
         total_gst_amount = 0.0
@@ -447,15 +452,24 @@ class SingleBillTab(QWidget):
 
         if "Thermal" in printer_type:
             # --- 1. THERMAL PRINTER HTML LAYOUT ---
+            # Clean string formatting to prevent empty lines
+            phone_str = f"Phone: {phone}<br>" if phone else ""
+            email_str = f"Email: {email}<br>" if email else ""
+            gst_str = f"GSTIN: {gstin_val}<br>" if gstin_val else ""
+            dl_str = f"DL No: {drug_license}<br>" if drug_license else ""
+            fssai_str = f"FSSAI: {fssai_no}<br>" if fssai_no else ""
+
             html = f"""
             <div style='font-family: "Courier New", Courier, monospace; font-size: 12px; color: black; width: 300px; margin: 0 auto;'>
                 <center>
                     <h2 style='margin: 0; padding: 0;'>{shop}</h2>
                     <div style='font-size: 11px; margin-top: 5px; line-height: 1.4;'>
                         {addr}<br>
-                        Phone: {phone}<br>
-                        Email: {email}<br>
-                        GSTIN: {gstin_val}
+                        {phone_str}
+                        {email_str}
+                        {gst_str}
+                        {dl_str}
+                        {fssai_str}
                     </div>
                 </center>
                 
@@ -501,15 +515,18 @@ class SingleBillTab(QWidget):
             
         else:
             # --- 2. LASER / INKJET (A4) PRINTER HTML LAYOUT ---
-            # REORGANIZED: Rate before Qty
             contact_str = f"Ph: {phone}" if phone else ""
             email_str = f" | Email: {email}" if email else ""
             gstin_str = f"<br>GSTIN: {gstin_val}" if gstin_val else ""
             
+            # Inline formatting for A4 layout
+            dl_str = f" | DL No: {drug_license}" if drug_license else ""
+            fssai_str = f" | FSSAI: {fssai_no}" if fssai_no else ""
+            
             html = f"""<div style='font-family: Arial, sans-serif; font-size: 13px; color:black;'>
             <center>
                 <h2>{shop}</h2>
-                <p style='margin: 0;'>{addr}<br>{contact_str}{email_str}{gstin_str}</p>
+                <p style='margin: 0;'>{addr}<br>{contact_str}{email_str}{gstin_str}{dl_str}{fssai_str}</p>
             </center><hr>
             
             <table width='100%' style='margin-bottom: 10px;'>

@@ -1,5 +1,6 @@
 import sys
 import sqlite3
+import re  # Added for validation
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
     QLineEdit, QTextEdit, QPushButton, QFrame, QMessageBox, QGridLayout,
@@ -42,7 +43,7 @@ class PharmacyDetailsInterface(QWidget):
             QMessageBox QPushButton:hover {{ background-color: #e0e0e0; }}
         """)
         
-        # Ensure DB has new email and printer columns
+        # Ensure DB has new email, printer, and fssai columns
         self.check_schema()
         
         self.is_editing = False 
@@ -65,6 +66,9 @@ class PharmacyDetailsInterface(QWidget):
                 cursor.execute("ALTER TABLE Pharmacy ADD COLUMN smtp_password TEXT")
             if "printer_type" not in columns:
                 cursor.execute("ALTER TABLE Pharmacy ADD COLUMN printer_type TEXT DEFAULT 'Thermal Printer (80mm/58mm)'")
+            # --- Added FSSAI Schema Check ---
+            if "fssai_no" not in columns:
+                cursor.execute("ALTER TABLE Pharmacy ADD COLUMN fssai_no TEXT")
             
             conn.commit()
         except Exception as e:
@@ -133,8 +137,9 @@ class PharmacyDetailsInterface(QWidget):
         self.inp_name = self.create_input("Pharmacy Name")
         self.inp_phone = self.create_input("Phone Number")
         self.inp_email = self.create_input("Public Email Address")
-        self.inp_gstin = self.create_input("GSTIN / Reg No.")
-        self.inp_license = self.create_input("Drug License Number")
+        self.inp_gstin = self.create_input("15-digit GSTIN / Reg No.")
+        self.inp_license = self.create_input("e.g., MH-MZ4-123456") 
+        self.inp_fssai = self.create_input("14-digit FSSAI Number") # New FSSAI input
         
         self.cmb_printer = QComboBox()
         self.cmb_printer.addItems(["Thermal Printer (80mm/58mm)", "Laser/Inkjet Printer (A4)"])
@@ -150,13 +155,14 @@ class PharmacyDetailsInterface(QWidget):
         self.add_form_row(form_grid, 1, "Phone:", self.inp_phone)
         self.add_form_row(form_grid, 2, "Public Email:", self.inp_email)
         self.add_form_row(form_grid, 3, "GSTIN:", self.inp_gstin)
-        self.add_form_row(form_grid, 4, "License No:", self.inp_license)
-        self.add_form_row(form_grid, 5, "Default Printer:", self.cmb_printer)
+        self.add_form_row(form_grid, 4, "Drug License No. (Form 20/21):", self.inp_license) # Updated label
+        self.add_form_row(form_grid, 5, "FSSAI License No.:", self.inp_fssai) # Added FSSAI row
+        self.add_form_row(form_grid, 6, "Default Printer:", self.cmb_printer) 
         
         lbl_addr = QLabel("Address:")
         lbl_addr.setStyleSheet(f"font-weight: bold; font-size: 14px; border: none; color: {COLOR_TEXT_PRIMARY};")
-        form_grid.addWidget(lbl_addr, 6, 0, alignment=Qt.AlignmentFlag.AlignTop)
-        form_grid.addWidget(self.inp_address, 6, 1)
+        form_grid.addWidget(lbl_addr, 7, 0, alignment=Qt.AlignmentFlag.AlignTop) # Shifted to row 7
+        form_grid.addWidget(self.inp_address, 7, 1)
 
         layout.addLayout(form_grid)
         layout.addStretch()
@@ -289,7 +295,8 @@ class PharmacyDetailsInterface(QWidget):
         self.inp_email.setReadOnly(readonly); self.inp_email.setEnabled(not readonly)
         self.inp_gstin.setReadOnly(readonly); self.inp_gstin.setEnabled(not readonly)
         self.inp_license.setReadOnly(readonly); self.inp_license.setEnabled(not readonly)
-        self.cmb_printer.setEnabled(not readonly) # QComboBox doesn't have setReadOnly
+        self.inp_fssai.setReadOnly(readonly); self.inp_fssai.setEnabled(not readonly) # New
+        self.cmb_printer.setEnabled(not readonly)
         self.inp_address.setReadOnly(readonly); self.inp_address.setEnabled(not readonly)
         
         # Email Settings
@@ -303,7 +310,8 @@ class PharmacyDetailsInterface(QWidget):
         
         # Select including new columns
         try:
-            cursor.execute("SELECT p_name, phone, email, GSTIN, license_no, location, smtp_email, smtp_password, printer_type FROM Pharmacy LIMIT 1")
+            # Added fssai_no to select statement
+            cursor.execute("SELECT p_name, phone, email, GSTIN, license_no, location, smtp_email, smtp_password, printer_type, fssai_no FROM Pharmacy LIMIT 1")
             row = cursor.fetchone()
         except Exception:
             # Fallback if columns missing
@@ -328,12 +336,17 @@ class PharmacyDetailsInterface(QWidget):
             idx = self.cmb_printer.findText(printer_val)
             if idx >= 0:
                 self.cmb_printer.setCurrentIndex(idx)
+                
+            # FSSAI Setting
+            self.inp_fssai.setText(row[9] if len(row) > 9 and row[9] else "")
         else:
             if not self.is_editing: self.toggle_edit_mode()
 
     def save_data(self):
         name = self.inp_name.text().strip()
         gstin = self.inp_gstin.text().strip()
+        license_no = self.inp_license.text().strip()
+        fssai_no = self.inp_fssai.text().strip()
         smtp_email = self.inp_smtp_email.text().strip()
         smtp_pass = self.inp_smtp_pass.text().strip()
         printer_type = self.cmb_printer.currentText()
@@ -344,9 +357,21 @@ class PharmacyDetailsInterface(QWidget):
             return False
 
         # 2. Validate GSTIN (Must be exactly 15 alphanumeric characters)
-        if not gstin or len(gstin) != 15 or not gstin.isalnum():
+        if gstin and (len(gstin) != 15 or not gstin.isalnum()):
             QMessageBox.warning(self, "Validation Error", "GSTIN number must be exactly 15 alphanumeric characters.")
             self.inp_gstin.setFocus()
+            return False
+
+        # 3. Validate Drug License (Alphanumeric with hyphens/slashes, min 5 chars)
+        if license_no and not re.match(r'^[A-Za-z0-9\-\/]{5,30}$', license_no):
+            QMessageBox.warning(self, "Validation Error", "Please enter a valid Drug License Number.\n(Letters, numbers, hyphens, and slashes only).")
+            self.inp_license.setFocus()
+            return False
+
+        # 4. Validate FSSAI (Must be exactly 14 digits)
+        if fssai_no and (len(fssai_no) != 14 or not fssai_no.isdigit()):
+            QMessageBox.warning(self, "Validation Error", "FSSAI License Number must be exactly 14 digits.")
+            self.inp_fssai.setFocus()
             return False
 
         conn = database.get_connection()
@@ -357,21 +382,24 @@ class PharmacyDetailsInterface(QWidget):
             cursor.execute("SELECT count(*) FROM Pharmacy")
             count = cursor.fetchone()[0]
 
+            # Added fssai_no to data tuple
             data = (
                 name, self.inp_phone.text().strip(), self.inp_email.text().strip(),
-                gstin, self.inp_license.text().strip(),
-                self.inp_address.toPlainText().strip(), smtp_email, smtp_pass, printer_type
+                gstin, license_no, self.inp_address.toPlainText().strip(), 
+                smtp_email, smtp_pass, printer_type, fssai_no
             )
 
             if count == 0:
+                # Insert query updated to include fssai_no
                 cursor.execute("""
-                    INSERT INTO Pharmacy (p_name, phone, email, GSTIN, license_no, location, smtp_email, smtp_password, printer_type)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO Pharmacy (p_name, phone, email, GSTIN, license_no, location, smtp_email, smtp_password, printer_type, fssai_no)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, data)
             else:
+                # Update query updated to include fssai_no
                 cursor.execute("""
                     UPDATE Pharmacy 
-                    SET p_name=?, phone=?, email=?, GSTIN=?, license_no=?, location=?, smtp_email=?, smtp_password=?, printer_type=?
+                    SET p_name=?, phone=?, email=?, GSTIN=?, license_no=?, location=?, smtp_email=?, smtp_password=?, printer_type=?, fssai_no=?
                 """, data)
 
             conn.commit()

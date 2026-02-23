@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QTableWidget, QTableWidgetItem, QHeaderView,
     QComboBox, QDateEdit, QMessageBox, QFrame, QAbstractItemView,
-    QCompleter, QDoubleSpinBox, QTabWidget, QFileDialog
+    QCompleter, QDoubleSpinBox, QSpinBox, QTabWidget, QFileDialog, QCheckBox
 )
 from PyQt6.QtCore import Qt, QDate, pyqtSignal
 from PyQt6.QtGui import QColor, QFont
@@ -43,7 +43,7 @@ STYLE_SHEET = f"""
         background-color: white;
         color: black;
         gridline-color: #ccc;
-        selection-background-color: #e7f1ff;
+        selection-background-color: transparent;
         selection-color: black;
     }}
     QHeaderView::section {{
@@ -53,14 +53,14 @@ STYLE_SHEET = f"""
         font-weight: bold;
         border: 1px solid #0a3d8f;
     }}
-    QLineEdit, QComboBox, QDateEdit, QDoubleSpinBox {{
+    QLineEdit, QComboBox, QDateEdit, QDoubleSpinBox, QSpinBox {{
         background-color: white;
         color: black;
         border: 1px solid #ccc;
         border-radius: 4px;
         padding: 5px 10px;
     }}
-    QLineEdit:focus, QComboBox:focus, QDateEdit:focus, QDoubleSpinBox:focus {{
+    QLineEdit:focus, QComboBox:focus, QDateEdit:focus, QDoubleSpinBox:focus, QSpinBox:focus {{
         border: 1px solid {COLOR_NAVBAR};
     }}
     QComboBox QAbstractItemView {{
@@ -71,6 +71,26 @@ STYLE_SHEET = f"""
     }}
     QLabel {{
         color: black;
+        background: transparent;
+    }}
+    /* --- CUSTOM CHECKBOX STYLING --- */
+    QCheckBox {{
+        background: transparent;
+    }}
+    QCheckBox::indicator {{
+        width: 18px;
+        height: 18px;
+        border: 2px solid #888;
+        border-radius: 4px;
+        background-color: white;
+    }}
+    QCheckBox::indicator:hover {{
+        border: 2px solid {COLOR_NAVBAR};
+    }}
+    QCheckBox::indicator:checked {{
+        background-color: {COLOR_GREEN_BTN};
+        border: 2px solid {COLOR_GREEN_BTN};
+        image: url(check.png); 
     }}
 """
 
@@ -104,6 +124,10 @@ class PurchaseReturnInterface(QWidget):
         self.setup_history_tab()
         self.tabs.addTab(self.tab_history, "Return History")
 
+        self.tab_expiring = QWidget()
+        self.setup_expiring_tab()
+        self.tabs.addTab(self.tab_expiring, "Expiring Stock Alerts")
+
         self.load_initial_data()
         self.tabs.currentChanged.connect(self.on_tab_change)
 
@@ -126,12 +150,14 @@ class PurchaseReturnInterface(QWidget):
         finally:
             conn.close()
 
+    # ==========================================
+    # TAB 1: NEW RETURN SETUP
+    # ==========================================
     def setup_new_return_tab(self):
         layout = QVBoxLayout(self.tab_new)
         layout.setSpacing(15)
         layout.setContentsMargins(20, 20, 20, 20)
 
-        # --- Top Section: Supplier & Date ---
         top_frame = QFrame()
         top_frame.setStyleSheet("background-color: white; border-radius: 8px; border: 1px solid #ddd;")
         top_layout = QHBoxLayout(top_frame)
@@ -160,22 +186,20 @@ class PurchaseReturnInterface(QWidget):
         self.lbl_return_no = QLabel("New Return")
         self.lbl_return_no.setStyleSheet("color: #6c757d; font-style: italic; font-size: 14px; font-weight: bold;")
         top_layout.addWidget(self.lbl_return_no)
-
         layout.addWidget(top_frame)
 
-        # --- Middle Section: Items Table ---
+        # UPDATED TABLE: 7 Columns for Strips and Loose Tabs
         self.table = QTableWidget()
-        self.table.setColumnCount(6)
-        # UPDATED HEADER TO REFLECT STRIPS/UNITS
-        self.table.setHorizontalHeaderLabels(["Product Name", "Batch No", "Expiry (MM/YY)", "Return Qty (Strips/Units)", "Return Amount (₹)", "Action"])
+        self.table.setColumnCount(7)
+        self.table.setHorizontalHeaderLabels(["Product Name", "Batch No", "Expiry", "Strips/Boxes", "Loose Tabs", "Amount (₹)", "Action"])
         
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        self.table.setColumnWidth(2, 130) 
-        self.table.setColumnWidth(3, 180) 
-        self.table.setColumnWidth(4, 160) 
-        self.table.setColumnWidth(5, 80)  
-        
+        self.table.setColumnWidth(2, 90) 
+        self.table.setColumnWidth(3, 100) 
+        self.table.setColumnWidth(4, 100) 
+        self.table.setColumnWidth(5, 120) 
+        self.table.setColumnWidth(6, 60)  
         layout.addWidget(self.table)
         
         btn_add = QPushButton(" + Add Item")
@@ -184,7 +208,6 @@ class PurchaseReturnInterface(QWidget):
         btn_add.clicked.connect(self.add_row)
         layout.addWidget(btn_add)
 
-        # --- Bottom Section: Payment & Totals ---
         bot_frame = QFrame()
         bot_frame.setStyleSheet("background-color: white; border-radius: 8px; border: 1px solid #ddd;")
         bot_layout = QVBoxLayout(bot_frame)
@@ -218,6 +241,9 @@ class PurchaseReturnInterface(QWidget):
         bot_layout.addLayout(action_row)
         layout.addWidget(bot_frame)
 
+    # ==========================================
+    # TAB 2: HISTORY SETUP
+    # ==========================================
     def setup_history_tab(self):
         layout = QVBoxLayout(self.tab_history)
         layout.setContentsMargins(20, 20, 20, 20)
@@ -245,6 +271,75 @@ class PurchaseReturnInterface(QWidget):
         
         layout.addWidget(self.hist_table)
 
+    # ==========================================
+    # TAB 3: EXPIRING STOCK SETUP
+    # ==========================================
+    def setup_expiring_tab(self):
+        layout = QVBoxLayout(self.tab_expiring)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(15)
+
+        filter_layout = QHBoxLayout()
+        self.exp_search = QLineEdit()
+        self.exp_search.setPlaceholderText("🔍 Search Product or Batch...")
+        self.exp_search.setMinimumHeight(35)
+        self.exp_search.textChanged.connect(self.load_expiring_data)
+        
+        self.exp_type_filter = QComboBox()
+        self.exp_type_filter.setMinimumHeight(35)
+        self.exp_type_filter.addItem("All Types")
+        self.exp_type_filter.addItems(["Tablet", "Capsule", "Syrup", "Injection", "Cream", "Ointment", "Drops", "Spray", "Powder", "Medical Devices", "Personal Care & Wellness"])
+        self.exp_type_filter.currentIndexChanged.connect(self.load_expiring_data)
+        
+        self.exp_sort = QComboBox()
+        self.exp_sort.setMinimumHeight(35)
+        self.exp_sort.addItems(["Days Left (Low to High)", "Days Left (High to Low)", "Product Name (A-Z)"])
+        self.exp_sort.currentIndexChanged.connect(self.load_expiring_data)
+
+        filter_layout.addWidget(self.exp_search, stretch=2)
+        filter_layout.addWidget(QLabel("<b>Type:</b>"))
+        filter_layout.addWidget(self.exp_type_filter, stretch=1)
+        filter_layout.addWidget(QLabel("<b>Sort:</b>"))
+        filter_layout.addWidget(self.exp_sort, stretch=1)
+        layout.addLayout(filter_layout)
+
+        action_layout = QHBoxLayout()
+        lbl_info = QLabel("<b>Products expiring within 6 months or already expired:</b>")
+        lbl_info.setFont(QFont("Segoe UI", 11))
+        
+        btn_refresh_exp = QPushButton("⟳ Refresh List")
+        btn_refresh_exp.setStyleSheet(f"background-color: #6c757d; color: white; padding: 8px 15px; font-weight: bold; border-radius: 4px;")
+        btn_refresh_exp.clicked.connect(self.load_expiring_data)
+        
+        btn_add_selected = QPushButton("➡ Add Selected to Return Form")
+        btn_add_selected.setStyleSheet(f"background-color: {COLOR_NAVBAR}; color: white; padding: 8px 15px; font-weight: bold; border-radius: 4px;")
+        btn_add_selected.clicked.connect(self.add_expiring_to_return)
+
+        action_layout.addWidget(lbl_info)
+        action_layout.addStretch()
+        action_layout.addWidget(btn_refresh_exp)
+        action_layout.addWidget(btn_add_selected)
+        layout.addLayout(action_layout)
+
+        self.exp_table = QTableWidget()
+        self.exp_table.setColumnCount(8)
+        self.exp_table.setHorizontalHeaderLabels(["Select", "Product Name", "Type", "Batch", "Stock Qty", "Expiry Date", "Days Left", "Status"])
+        self.exp_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.exp_table.setColumnWidth(0, 60)
+        self.exp_table.setColumnWidth(2, 120)
+        self.exp_table.setColumnWidth(3, 100)
+        self.exp_table.setColumnWidth(4, 100)
+        self.exp_table.setColumnWidth(5, 100)
+        self.exp_table.setColumnWidth(6, 100)
+        self.exp_table.setColumnWidth(7, 130)
+        
+        self.exp_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.exp_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        layout.addWidget(self.exp_table)
+
+    # ==========================================
+    # CORE LOGIC & DATA LOADING
+    # ==========================================
     def load_initial_data(self):
         self.suppliers = []
         self.products_cache = []
@@ -263,14 +358,182 @@ class PurchaseReturnInterface(QWidget):
 
         cursor.execute("SELECT prod_id, prod_name FROM Product_Details ORDER BY prod_name")
         self.products_cache = cursor.fetchall()
-        
         conn.close()
+        
         self.load_history()
+        self.load_expiring_data()
 
     def on_tab_change(self, index):
         if index == 1:
             self.load_history()
+        elif index == 2:
+            self.load_expiring_data()
 
+    # --- Expiring Data Logic ---
+    def load_expiring_data(self):
+        search_txt = self.exp_search.text().lower()
+        type_filter = self.exp_type_filter.currentText()
+        sort_opt = self.exp_sort.currentText()
+
+        self.exp_table.setRowCount(0)
+        conn = database.get_connection()
+        if not conn: return
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT s.prod_id, d.prod_name, s.batch_no, s.quantity, s.exp_date, d.tabs_per_strip, d.type
+            FROM Product_Stock s
+            JOIN Product_Details d ON s.prod_id = d.prod_id
+            WHERE s.quantity > 0
+        """)
+        rows = cursor.fetchall()
+        conn.close()
+
+        filtered_items = []
+        today = datetime.date.today()
+
+        for prod_id, prod_name, batch, qty, exp_date_str, tps, p_type in rows:
+            if not exp_date_str: continue
+            try:
+                if "/" in exp_date_str:
+                    m, y = map(int, exp_date_str.split('/'))
+                    y = 2000 + y if y < 100 else y
+                    exp_date = datetime.date(y, m, 1)
+                else:
+                    exp_date = datetime.datetime.strptime(exp_date_str, "%Y-%m-%d").date()
+            except:
+                continue
+
+            days_left = (exp_date - today).days
+
+            if days_left <= 180:
+                if search_txt and search_txt not in prod_name.lower() and search_txt not in str(batch).lower():
+                    continue
+                if type_filter != "All Types" and str(p_type).lower() != type_filter.lower():
+                    continue
+                
+                filtered_items.append({
+                    "prod_id": prod_id,
+                    "prod_name": prod_name,
+                    "type": str(p_type),
+                    "batch": batch,
+                    "qty": qty,
+                    "exp_date_str": exp_date_str,
+                    "days_left": days_left,
+                    "tps": tps
+                })
+
+        if sort_opt == "Days Left (Low to High)":
+            filtered_items.sort(key=lambda x: x['days_left'])
+        elif sort_opt == "Days Left (High to Low)":
+            filtered_items.sort(key=lambda x: x['days_left'], reverse=True)
+        elif sort_opt == "Product Name (A-Z)":
+            filtered_items.sort(key=lambda x: x['prod_name'].lower())
+
+        for row_idx, item in enumerate(filtered_items):
+            self.exp_table.insertRow(row_idx)
+            self.exp_table.setRowHeight(row_idx, 40)
+
+            chk_widget = QWidget()
+            chk_layout = QHBoxLayout(chk_widget)
+            chk_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            chk_layout.setContentsMargins(0,0,0,0)
+            
+            chk = QCheckBox()
+            chk.setProperty("prod_id", item["prod_id"])
+            chk.setProperty("batch", item["batch"])
+            chk.toggled.connect(lambda state, r=row_idx: self.highlight_exp_row(state, r))
+            chk_layout.addWidget(chk)
+            self.exp_table.setCellWidget(row_idx, 0, chk_widget)
+
+            self.exp_table.setItem(row_idx, 1, QTableWidgetItem(item["prod_name"]))
+            self.exp_table.setItem(row_idx, 2, QTableWidgetItem(item["type"]))
+            self.exp_table.setItem(row_idx, 3, QTableWidgetItem(str(item["batch"])))
+
+            tps = int(item["tps"]) if item["tps"] else 1
+            raw_qty = item["qty"]
+            disp_qty = f"{int(raw_qty)//tps}s + {int(raw_qty)%tps}t" if tps > 1 else str(raw_qty)
+            
+            item_qty = QTableWidgetItem(disp_qty)
+            item_qty.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.exp_table.setItem(row_idx, 4, item_qty)
+
+            item_exp = QTableWidgetItem(item["exp_date_str"])
+            item_exp.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.exp_table.setItem(row_idx, 5, item_exp)
+
+            item_days = QTableWidgetItem(str(item["days_left"]))
+            item_days.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.exp_table.setItem(row_idx, 6, item_days)
+
+            status = "Expired" if item["days_left"] < 0 else "Expiring Soon"
+            color = COLOR_RED_BTN if item["days_left"] < 0 else "#fd7e14"
+
+            status_item = QTableWidgetItem(status)
+            status_item.setForeground(QColor(color))
+            status_item.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+            status_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.exp_table.setItem(row_idx, 7, status_item)
+
+    def highlight_exp_row(self, is_checked, row):
+        bg_color = QColor("#d0e1f5") if is_checked else QColor("white")
+        for col in range(1, self.exp_table.columnCount()):
+            item = self.exp_table.item(row, col)
+            if item:
+                item.setBackground(bg_color)
+
+    def add_expiring_to_return(self):
+        selected_items = []
+        for i in range(self.exp_table.rowCount()):
+            chk_widget = self.exp_table.cellWidget(i, 0)
+            if chk_widget:
+                chk = chk_widget.findChild(QCheckBox)
+                if chk and chk.isChecked():
+                    selected_items.append({
+                        "prod_id": chk.property("prod_id"),
+                        "batch": chk.property("batch")
+                    })
+
+        if not selected_items:
+            QMessageBox.warning(self, "No Selection", "Please select at least one item to return.")
+            return
+
+        self.tabs.setCurrentIndex(0)
+
+        for item in selected_items:
+            self.add_row()
+            row = self.table.rowCount() - 1
+
+            cmb_prod = self.table.cellWidget(row, 0)
+            idx_p = cmb_prod.findData(item["prod_id"])
+            if idx_p >= 0:
+                cmb_prod.setCurrentIndex(idx_p)
+
+                cmb_batch = self.table.cellWidget(row, 1)
+                for b_idx in range(cmb_batch.count()):
+                    b_data = cmb_batch.itemData(b_idx)
+                    if b_data and b_data.get('batch') == item["batch"]:
+                        cmb_batch.setCurrentIndex(b_idx)
+                        
+                        # Pre-fill max available strips and loose tabs
+                        spin_strips = self.table.cellWidget(row, 3)
+                        spin_tabs = self.table.cellWidget(row, 4)
+                        
+                        max_s = b_data.get('total_units', 0) // b_data.get('tps', 1)
+                        max_t = b_data.get('total_units', 0) % b_data.get('tps', 1)
+                        
+                        spin_strips.setValue(int(max_s))
+                        if spin_tabs.isEnabled():
+                            spin_tabs.setValue(int(max_t))
+                        break
+
+        for i in range(self.exp_table.rowCount()):
+            chk_widget = self.exp_table.cellWidget(i, 0)
+            if chk_widget:
+                chk = chk_widget.findChild(QCheckBox)
+                if chk: chk.setChecked(False)
+
+    # --- New Return Form Logic (UPDATED FOR STRIPS & LOOSE TABS) ---
     def add_row(self):
         row = self.table.rowCount()
         self.table.insertRow(row)
@@ -300,33 +563,39 @@ class PurchaseReturnInterface(QWidget):
         lbl_exp.setStyleSheet("color: black; font-weight: bold;")
         self.table.setCellWidget(row, 2, lbl_exp)
 
-        spin_qty = QDoubleSpinBox()
-        spin_qty.setRange(0, 99999)
-        spin_qty.setDecimals(2) # Allowed 2 decimals so user can return 1.5 strips if needed
-        spin_qty.setValue(0)
-        spin_qty.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        spin_qty.valueChanged.connect(self.calculate_totals)
-        self.table.setCellWidget(row, 3, spin_qty)
+        # COLUMN 3: STRIPS
+        spin_strips = QSpinBox()
+        spin_strips.setRange(0, 99999)
+        spin_strips.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.table.setCellWidget(row, 3, spin_strips)
 
+        # COLUMN 4: LOOSE TABS
+        spin_tabs = QSpinBox()
+        spin_tabs.setRange(0, 99999)
+        spin_tabs.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.table.setCellWidget(row, 4, spin_tabs)
+
+        # COLUMN 5: AMOUNT
         spin_amt = QDoubleSpinBox()
         spin_amt.setRange(0, 999999)
         spin_amt.setPrefix("₹ ")
         spin_amt.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         spin_amt.valueChanged.connect(self.calculate_totals)
-        self.table.setCellWidget(row, 4, spin_amt)
+        self.table.setCellWidget(row, 5, spin_amt)
 
+        # COLUMN 6: DELETE BUTTON
         btn_del = QPushButton("✖")
         btn_del.setStyleSheet("color: white; background-color: #dc3545; font-weight: bold; border-radius: 4px; margin: 5px;")
         btn_del.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_del.clicked.connect(lambda _, r=row: self.remove_row(r))
-        self.table.setCellWidget(row, 5, btn_del)
+        self.table.setCellWidget(row, 6, btn_del)
 
     def remove_row(self, row):
         self.table.removeRow(row)
         self.calculate_totals()
         
         for i in range(self.table.rowCount()):
-            btn = self.table.cellWidget(i, 5)
+            btn = self.table.cellWidget(i, 6)
             try: btn.clicked.disconnect() 
             except: pass
             btn.clicked.connect(lambda _, r=i: self.remove_row(r))
@@ -352,7 +621,6 @@ class PurchaseReturnInterface(QWidget):
 
         conn = database.get_connection()
         cursor = conn.cursor()
-        # UPDATED: Fetching tabs_per_strip to convert units to display logic
         cursor.execute("""
             SELECT s.batch_no, s.quantity, s.exp_date, s.purchase_rate, d.tabs_per_strip 
             FROM Product_Stock s
@@ -365,50 +633,79 @@ class PurchaseReturnInterface(QWidget):
         cmb_batch.addItem("Select Batch", None)
         for batch_no, qty, exp, rate_unit, tps in batches:
             tps = int(tps) if tps else 1
-            # Display stock clearly in Strips and loose
             disp_qty = f"{int(qty)//tps}s + {int(qty)%tps}t" if tps > 1 else str(qty)
-            
-            # rate_unit is per tablet. We need rate per strip for the amount calc
             rate_strip = rate_unit * tps
-            max_strips = qty / tps
             
             cmb_batch.addItem(f"{batch_no} (Stock: {disp_qty})", 
-                              {"exp": exp, "rate_strip": rate_strip, "batch": batch_no, "max_strips": max_strips, "tps": tps, "total_units": qty})
+                              {"exp": exp, "rate_strip": rate_strip, "batch": batch_no, "tps": tps, "total_units": qty})
 
     def on_batch_selected(self, row):
         cmb_batch = self.table.cellWidget(row, 1)
         data = cmb_batch.currentData()
         
         lbl_exp = self.table.cellWidget(row, 2)
-        spin_amt = self.table.cellWidget(row, 4)
-        spin_qty = self.table.cellWidget(row, 3)
+        spin_strips = self.table.cellWidget(row, 3)
+        spin_tabs = self.table.cellWidget(row, 4)
+        spin_amt = self.table.cellWidget(row, 5)
         
         if data:
             lbl_exp.setText(data['exp'])
             rate_strip = data['rate_strip']
+            tps = data['tps']
+            total_units = data.get('total_units', 0)
+            rate_tab = rate_strip / tps if tps > 0 else rate_strip
             
-            # Lock the spinbox so they can't return more strips than they physically own
-            spin_qty.setMaximum(float(data['max_strips']))
+            # 1. Set absolute maximum for Strips based on total units
+            max_strips = int(total_units // tps) if tps > 0 else int(total_units)
+            spin_strips.setMaximum(max_strips)
             
-            try: spin_qty.valueChanged.disconnect() 
+            # Disable the "Loose Tabs" box if the product is single-unit (like Syrup or Cream)
+            if tps <= 1:
+                spin_tabs.setValue(0)
+                spin_tabs.setMaximum(0)
+                spin_tabs.setEnabled(False)
+            else:
+                spin_tabs.setEnabled(True)
+
+            try: 
+                spin_strips.valueChanged.disconnect() 
+                spin_tabs.valueChanged.disconnect() 
             except: pass
             
-            # Amount calculates based on strips * price_per_strip
-            spin_qty.valueChanged.connect(lambda val, r=rate_strip: spin_amt.setValue(val * r))
-            spin_qty.valueChanged.connect(self.calculate_totals)
+            # 2. Auto-calculate amount and DYNAMICALLY LIMIT Loose Tabs
+            def auto_calc_amount():
+                s_val = spin_strips.value()
+                
+                # --- THE LIMITER LOGIC ---
+                if tps > 1:
+                    # Calculate how many units are left after selecting strips
+                    remaining_units = total_units - (s_val * tps)
+                    
+                    # The max loose tabs is either the remaining units, or (tabs_per_strip - 1)
+                    max_allowed_tabs = min(tps - 1, remaining_units)
+                    spin_tabs.setMaximum(int(max(0, max_allowed_tabs)))
+                # -------------------------
+                
+                t_val = spin_tabs.value()
+                spin_amt.setValue((s_val * rate_strip) + (t_val * rate_tab))
+                self.calculate_totals()
+                
+            spin_strips.valueChanged.connect(auto_calc_amount)
+            spin_tabs.valueChanged.connect(auto_calc_amount)
             
-            current_qty = spin_qty.value()
-            spin_amt.setValue(current_qty * rate_strip)
+            auto_calc_amount()
         else:
             lbl_exp.setText("-")
             spin_amt.setValue(0)
+            spin_strips.setMaximum(99999)
+            spin_tabs.setMaximum(99999)
 
         self.calculate_totals()
 
     def calculate_totals(self):
         total = 0.0
         for i in range(self.table.rowCount()):
-            spin_amt = self.table.cellWidget(i, 4)
+            spin_amt = self.table.cellWidget(i, 5)
             if spin_amt:
                 total += spin_amt.value()
         
@@ -458,7 +755,6 @@ class PurchaseReturnInterface(QWidget):
         conn = database.get_connection()
         cursor = conn.cursor()
         
-        # --- VALIDATION LOOP ---
         for i in range(self.table.rowCount()):
             cmb_prod = self.table.cellWidget(i, 0)
             prod_id = cmb_prod.currentData()
@@ -467,20 +763,19 @@ class PurchaseReturnInterface(QWidget):
             batch_data = cmb_batch.currentData()
             
             qty_strips = self.table.cellWidget(i, 3).value()
-            amt = self.table.cellWidget(i, 4).value()
+            qty_tabs = self.table.cellWidget(i, 4).value()
+            amt = self.table.cellWidget(i, 5).value()
             
             if not prod_id or not batch_data:
                 continue 
+                
+            qty_units = (qty_strips * batch_data['tps']) + qty_tabs
             
-            if qty_strips <= 0:
-                QMessageBox.warning(self, "Error", f"Row {i+1}: Quantity must be greater than 0.")
+            if qty_units <= 0:
+                QMessageBox.warning(self, "Error", f"Row {i+1}: Return quantity must be greater than 0.")
                 conn.close()
                 return
             
-            # Convert user's strip quantity into raw units for the database logic
-            qty_units = qty_strips * batch_data['tps']
-            
-            # EXTRA VALIDATION: Check DB bounds
             cursor.execute("SELECT quantity FROM Product_Stock WHERE prod_id=? AND batch_no=?", (prod_id, batch_data['batch']))
             stock_record = cursor.fetchone()
             current_stock = stock_record[0] if stock_record else 0
@@ -492,7 +787,10 @@ class PurchaseReturnInterface(QWidget):
                 if old_rec: o_qty = old_rec[0]
                 
             if qty_units > (current_stock + o_qty):
-                QMessageBox.warning(self, "Stock Error", f"Row {i+1}: Cannot return {qty_strips} strips. Not enough stock.")
+                available_total = current_stock + o_qty
+                av_s = available_total // batch_data['tps']
+                av_t = available_total % batch_data['tps']
+                QMessageBox.warning(self, "Stock Error", f"Row {i+1}: Cannot return more than available stock ({av_s} strips and {av_t} tabs).")
                 conn.close()
                 return
 
@@ -501,7 +799,8 @@ class PurchaseReturnInterface(QWidget):
                 "batch": batch_data['batch'],
                 "exp": batch_data['exp'],
                 "qty_units": qty_units, 
-                "amt": amt
+                "amt": amt,
+                "tps": batch_data['tps']
             })
 
         if not items_to_save:
@@ -509,7 +808,6 @@ class PurchaseReturnInterface(QWidget):
             conn.close()
             return
 
-        # --- EXECUTION ---
         try:
             if self.editing_return_id:
                 cursor.execute("SELECT balance, supp_id FROM Purchase_Return WHERE return_id=?", (self.editing_return_id,))
@@ -559,6 +857,9 @@ class PurchaseReturnInterface(QWidget):
 
             cursor.execute("UPDATE Supplier SET balance = balance - ? WHERE Supp_id = ?", (balance, supp_id))
             
+            # --- AUTO-DELETE EXHAUSTED BATCHES ---
+            cursor.execute("DELETE FROM Product_Stock WHERE quantity <= 0")
+            
             conn.commit()
             msg = f"Purchase Return {return_no} updated successfully!" if self.editing_return_id else f"Purchase Return {return_no} saved successfully!"
             QMessageBox.information(self, "Success", msg)
@@ -573,6 +874,7 @@ class PurchaseReturnInterface(QWidget):
 
             self.clear_form()
             self.load_history()
+            self.load_expiring_data()
             
         except Exception as e:
             conn.rollback()
@@ -666,7 +968,6 @@ class PurchaseReturnInterface(QWidget):
             
         r_no, supp_id, r_date, p_mode, a_rec = ret_data
         
-        # Pull tabs_per_strip so we can reverse the DB math (Units -> Strips) for the UI
         cursor.execute("""
             SELECT d.prod_id, d.prod_name, i.batch_no, i.return_qty, i.return_amount, i.expiry_date, d.tabs_per_strip
             FROM Purchase_Return_Item i
@@ -674,7 +975,6 @@ class PurchaseReturnInterface(QWidget):
             WHERE i.return_id=?
         """, (return_id,))
         items = cursor.fetchall()
-        
         conn.close()
 
         self.tabs.setCurrentIndex(0)
@@ -704,14 +1004,18 @@ class PurchaseReturnInterface(QWidget):
                     cmb_batch.setCurrentIndex(i)
                     break
             
-            # Convert units back to strips/boxes for display
             tps = int(tps) if tps else 1
-            qty_strips = qty_units / tps
+            qty_strips = qty_units // tps
+            qty_tabs = qty_units % tps
             
-            spin_qty = self.table.cellWidget(row, 3)
-            spin_qty.setValue(qty_strips)
+            spin_strips = self.table.cellWidget(row, 3)
+            spin_strips.setValue(qty_strips)
             
-            spin_amt = self.table.cellWidget(row, 4)
+            spin_tabs = self.table.cellWidget(row, 4)
+            if spin_tabs.isEnabled():
+                spin_tabs.setValue(qty_tabs)
+            
+            spin_amt = self.table.cellWidget(row, 5)
             spin_amt.setValue(amt)
             
         self.btn_save.setText("Update Return")
@@ -731,9 +1035,8 @@ class PurchaseReturnInterface(QWidget):
         if not master: return
         r_no, supp_id, date, total, s_name, s_addr = master
         
-        # Displaying units inside the PDF since that's what's saved
         cursor.execute("""
-            SELECT d.prod_name, i.batch_no, i.expiry_date, i.return_qty, i.return_amount
+            SELECT d.prod_name, i.batch_no, i.expiry_date, i.return_qty, i.return_amount, d.tabs_per_strip
             FROM Purchase_Return_Item i
             JOIN Product_Details d ON i.Prod_id = d.prod_id
             WHERE i.return_id = ?
@@ -741,8 +1044,8 @@ class PurchaseReturnInterface(QWidget):
         items_db = cursor.fetchall()
         
         items_fmt = []
-        for n, b, e, q, a in items_db:
-            items_fmt.append({"prod_name": n, "batch": b, "exp": e, "qty_units": q, "amt": a})
+        for n, b, e, q, a, t in items_db:
+            items_fmt.append({"prod_name": n, "batch": b, "exp": e, "qty_units": q, "amt": a, "tps": t})
             
         conn.close()
         self.generate_pdf(return_id, r_no, supp_id, items_fmt, total, date, supplier_name=s_name, supplier_addr=s_addr)
@@ -784,26 +1087,26 @@ class PurchaseReturnInterface(QWidget):
             ]
             
             t_info = Table(data_info, colWidths=[300, 200])
-            t_info.setStyle(TableStyle([
-                ('VALIGN', (0,0), (-1,-1), 'TOP'),
-            ]))
+            t_info.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP')]))
             elements.append(t_info)
             elements.append(Spacer(1, 20))
             
-            data_items = [["Product Name", "Batch", "Expiry", "Units/Tabs", "Amount (Rs)"]]
+            data_items = [["Product Name", "Batch", "Expiry", "Qty (Strips/Tabs)", "Amount (Rs)"]]
             for item in items:
                 p_name = item.get('prod_name') if 'prod_name' in item else self.get_prod_name(item['prod_id'])
-                data_items.append([
-                    p_name,
-                    item['batch'],
-                    item['exp'],
-                    str(item['qty_units']),
-                    f"{item['amt']:.2f}"
-                ])
+                
+                tps = int(item['tps']) if item['tps'] else 1
+                units = item['qty_units']
+                if tps > 1:
+                    qty_str = f"{units // tps}s + {units % tps}t"
+                else:
+                    qty_str = str(units)
+                
+                data_items.append([p_name, item['batch'], item['exp'], qty_str, f"{item['amt']:.2f}"])
             
             data_items.append(["", "", "", "TOTAL", f"{total:.2f}"])
 
-            t_items = Table(data_items, colWidths=[200, 100, 80, 70, 70])
+            t_items = Table(data_items, colWidths=[200, 100, 80, 100, 70])
             t_items.setStyle(TableStyle([
                 ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
                 ('TEXTCOLOR', (0,0), (-1,0), colors.black),

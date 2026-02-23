@@ -5,7 +5,6 @@ import os
 import smtplib
 import webbrowser
 import urllib.parse
-import time
 # --- IMPORTS FOR FILE HIGHLIGHTING ---
 if sys.platform == 'win32':
     import subprocess
@@ -27,7 +26,7 @@ from PyQt6.QtWidgets import (
     QComboBox, QSpinBox, QAbstractItemView, QCompleter, 
     QListView, QSplitter, QGroupBox, QDialog
 )
-from PyQt6.QtCore import Qt, QUrl, QMimeData
+from PyQt6.QtCore import Qt, QUrl, QMimeData, QTimer # <-- Added QTimer here
 from PyQt6.QtGui import QFont, QColor
 
 # PDF Imports
@@ -51,7 +50,6 @@ COLOR_ACCENT = "#198754"
 COLOR_DANGER = "#dc3545" 
 COLOR_BORDER = "#dee2e6"
 
-# Removed the global QPushButton { color: white; } so we can control text color manually
 STYLE_SHEET = f"""
     QWidget {{ font-family: 'Segoe UI', Arial, sans-serif; color: #000000; background-color: {COLOR_BG}; }}
     QLabel, QCheckBox, QRadioButton, QTabWidget {{ color: #000000; background: transparent; }}
@@ -74,7 +72,6 @@ class SendMethodDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Send Purchase Order")
-        # INCREASED WIDTH to 600 so "Skip" is never hidden
         self.setFixedSize(600, 150) 
         self.setStyleSheet(STYLE_SHEET)
         self.choice = "NONE"
@@ -87,7 +84,6 @@ class SendMethodDialog(QDialog):
 
         btn_layout = QHBoxLayout()
         
-        # CHANGED COLORS: Lighter backgrounds with pure BLACK text
         btn_email = QPushButton("📧 Email")
         btn_email.setStyleSheet("background-color: #b3d4ff; color: black; padding: 10px; border-radius: 4px; font-weight: bold; font-size: 14px;")
         
@@ -299,7 +295,7 @@ class OrdersInterface(QWidget):
         
         row2 = QHBoxLayout()
         self.txt_supp_phone = QLineEdit()
-        self.txt_supp_phone.setPlaceholderText("Phone Number")
+        self.txt_supp_phone.setPlaceholderText("Phone Number (include Country Code like 91)")
         self.txt_supp_email = QLineEdit()
         self.txt_supp_email.setPlaceholderText("Email Address")
         row2.addWidget(QLabel("Phone:"))
@@ -345,7 +341,6 @@ class OrdersInterface(QWidget):
         self.btn_save.clicked.connect(self.save_order)
         layout.addWidget(self.btn_save)
         
-        # INCREASED WIDTH of Clear Form Button
         self.btn_cancel_edit = QPushButton("Cancel Editing / Clear Form")
         self.btn_cancel_edit.setMinimumWidth(300) 
         self.btn_cancel_edit.setFixedHeight(35)
@@ -456,7 +451,8 @@ class OrdersInterface(QWidget):
         self.btn_save.setText("Save Order & Generate PDF")
         self.btn_cancel_edit.setText("Cancel Editing / Clear Form")
 
-    # === WHATSAPP AUTOMATION LOGIC (WINDOWS ONLY) ===
+    # === FIXED WHATSAPP AUTOMATION LOGIC ===
+    # === FIXED WHATSAPP AUTOMATION LOGIC ===
     def send_po_via_whatsapp(self, supplier_phone, po_id, pdf_path):
         if sys.platform != 'win32':
              QMessageBox.warning(self, "Not Supported", "WhatsApp automation is only supported on Windows.")
@@ -470,32 +466,61 @@ class OrdersInterface(QWidget):
         encoded_message = urllib.parse.quote(message)
         whatsapp_url = f"https://wa.me/{clean_phone}?text={encoded_message}"
         
-        # 1. Add the file to the system clipboard
+        # 1. Warn the user NOT to touch the mouse/keyboard
+        QMessageBox.information(self, "WhatsApp Automation", 
+                                "WhatsApp will now open.\n\n"
+                                "⚠️ PLEASE DO NOT TOUCH your mouse or keyboard for the next 15 seconds while the PDF is attached.")
+
+        # 2. Properly format the absolute path and add to clipboard
         if pdf_path and os.path.exists(pdf_path):
+            abs_path = os.path.normpath(os.path.abspath(pdf_path))
             clipboard = QApplication.clipboard()
             mime_data = QMimeData()
-            mime_data.setUrls([QUrl.fromLocalFile(os.path.abspath(pdf_path))])
+            mime_data.setUrls([QUrl.fromLocalFile(abs_path)])
             clipboard.setMimeData(mime_data)
 
-        # 2. Open WhatsApp Web/Desktop
+        # 3. Open WhatsApp 
         webbrowser.open(whatsapp_url)
         
-        # 3. Use PyAutoGUI to simulate pasting the file (Ctrl + V)
+        # 4. Increased timer to 12 seconds to account for slower cold-starts
         if pdf_path and os.path.exists(pdf_path):
-            try:
-                # Give WhatsApp Web/Desktop 8 seconds to open and load the chat window
-                time.sleep(8) 
-                
-                # Simulate pressing Ctrl + V to paste the copied PDF
-                pyautogui.hotkey('ctrl', 'v')
-                
-                # Wait 2 seconds for the attachment preview to load, then hit Enter to send
-                time.sleep(2)
-                pyautogui.press('enter')
-            except Exception as e:
-                 print(f"Automation Error: {e}")
-                 QMessageBox.warning(self, "Automation Failed", "Could not auto-paste. Please press Ctrl+V in WhatsApp manually.")
+            if 'pyautogui' in sys.modules:
+                QTimer.singleShot(12000, self.auto_paste_whatsapp)
+            else:
+                 QMessageBox.warning(self, "Warning", "PyAutoGUI not found. Please press Ctrl+V manually.")
 
+    def auto_paste_whatsapp(self):
+        """Pastes the file into the chat."""
+        try:
+            import pyautogui
+            
+            # Simulate pressing Ctrl + V to paste the copied PDF
+            pyautogui.hotkey('ctrl', 'v')
+            
+            # Wait 4 seconds (increased from 2) for the heavy PDF attachment preview to load
+            QTimer.singleShot(4000, self.auto_send_whatsapp)
+        except Exception as e:
+            print(f"Automation Error: {e}")
+
+    def auto_send_whatsapp(self):
+        """Presses enter after the attachment preview has loaded."""
+        try:
+            import pyautogui
+            pyautogui.press('enter')
+        except Exception as e:
+            print(f"Automation Error: {e}")
+
+    def auto_paste_whatsapp(self):
+        """This function runs cleanly in the background exactly 8 seconds later."""
+        try:
+            import pyautogui
+            # Simulate pressing Ctrl + V to paste the copied PDF
+            pyautogui.hotkey('ctrl', 'v')
+            
+            # Use QTimer again to wait 2 seconds for the attachment to load, then hit Enter
+            QTimer.singleShot(2000, lambda: pyautogui.press('enter'))
+        except Exception as e:
+            print(f"Automation Error: {e}")
 
     # === MAIN SAVE LOGIC ===
     def save_order(self):
@@ -565,20 +590,18 @@ class OrdersInterface(QWidget):
             # --- HANDLE WHATSAPP ---
             if dlg.choice in ["WHATSAPP", "BOTH"]:
                 if phone:
-                    # Ensure pyautogui is available before trying
                     if sys.platform == 'win32' and 'pyautogui' in sys.modules:
                         self.send_po_via_whatsapp(phone, po_id, pdf_path)
-                        wa_status = "- WhatsApp Opened & File Auto-Attached!\n"
+                        wa_status = "- WhatsApp Opened! Auto-Attaching in 8 seconds...\n"
                         cursor.execute("UPDATE Purchase_order SET status='Sent' WHERE po_id=?", (po_id,))
                     else:
-                         QMessageBox.warning(self, "WhatsApp Error", "WhatsApp automation requires Windows and the 'pyautogui' library installed.")
-                         wa_status = "- WhatsApp Failed (Missing requirements).\n"
+                         QMessageBox.warning(self, "WhatsApp Error", "WhatsApp automation requires Windows and PyAutoGUI.")
+                         wa_status = "- WhatsApp Failed.\n"
                 else:
                     wa_status = "- WhatsApp Failed (No phone number provided).\n"
 
             conn.commit()
             
-            # Final Message to user
             final_msg = f"{msg_text}\n\n{email_status}{wa_status}"
             if dlg.choice == "NONE":
                 final_msg += "- Order saved without sending."
@@ -594,7 +617,6 @@ class OrdersInterface(QWidget):
             conn.close()
 
     def generate_pdf(self, po_id, s_name, s_phone, s_email, date_str):
-        # CREATE A SPECIFIC FOLDER FOR PDFs
         base_dir = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
         if hasattr(sys, 'frozen'):
             base_dir = os.path.dirname(sys.executable)
@@ -669,7 +691,7 @@ class OrdersInterface(QWidget):
         
         try:
             doc.build(elements)
-            return filepath # Returning the full file path
+            return filepath
         except Exception as e:
             print(f"PDF Error: {e}")
             return None
@@ -767,7 +789,6 @@ class OrdersInterface(QWidget):
         status_layout.addWidget(self.btn_update_status)
         prev_layout.addLayout(status_layout)
         
-        # INCREASED WIDTH of Edit Button
         self.btn_edit_resend = QPushButton("✎ Edit / Resend Order")
         self.btn_edit_resend.setMinimumWidth(250)
         self.btn_edit_resend.setFixedHeight(35)
