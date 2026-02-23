@@ -3,6 +3,18 @@ import sqlite3
 import datetime
 import os
 import smtplib
+import webbrowser
+import urllib.parse
+import time
+# --- IMPORTS FOR FILE HIGHLIGHTING ---
+if sys.platform == 'win32':
+    import subprocess
+    try:
+        import pyautogui
+    except ImportError:
+        print("PyAutoGUI not installed. Automated pasting won't work.")
+# ------------------------------------
+
 from email.message import EmailMessage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -13,9 +25,9 @@ from PyQt6.QtWidgets import (
     QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, 
     QHeaderView, QFrame, QMessageBox, QTabWidget, QCheckBox,
     QComboBox, QSpinBox, QAbstractItemView, QCompleter, 
-    QListView, QSplitter, QGroupBox, QSizePolicy, QFileDialog
+    QListView, QSplitter, QGroupBox, QDialog
 )
-from PyQt6.QtCore import Qt, QStringListModel
+from PyQt6.QtCore import Qt, QUrl, QMimeData
 from PyQt6.QtGui import QFont, QColor
 
 # PDF Imports
@@ -39,28 +51,70 @@ COLOR_ACCENT = "#198754"
 COLOR_DANGER = "#dc3545" 
 COLOR_BORDER = "#dee2e6"
 
+# Removed the global QPushButton { color: white; } so we can control text color manually
 STYLE_SHEET = f"""
-    * {{ color: #000000; font-family: 'Segoe UI', Arial, sans-serif; }}
-    QWidget {{ background-color: {COLOR_BG}; }}
-    QLabel, QCheckBox, QRadioButton, QTabWidget {{ color: #000000; }}
+    QWidget {{ font-family: 'Segoe UI', Arial, sans-serif; color: #000000; background-color: {COLOR_BG}; }}
+    QLabel, QCheckBox, QRadioButton, QTabWidget {{ color: #000000; background: transparent; }}
     QLineEdit, QComboBox, QSpinBox {{
         border: 1px solid #ced4da; border-radius: 4px; padding: 5px; 
         font-size: 14px; background-color: #ffffff; color: #000000; 
     }}
     QLineEdit:focus, QComboBox:focus, QSpinBox:focus {{ border: 1px solid {COLOR_NAVBAR}; }}
     QListView {{ background-color: {COLOR_WHITE}; color: #000000; outline: none; }}
-    QTableWidget {{ 
-        background-color: #ffffff; gridline-color: #dee2e6; color: #000000; border: 1px solid #dee2e6; 
-    }}
+    QTableWidget {{ background-color: #ffffff; gridline-color: #dee2e6; color: #000000; border: 1px solid #dee2e6; }}
     QTableWidget::item {{ color: #000000; padding: 5px; }}
     QTableWidget::item:selected {{ background-color: #d0e1f5; color: #000000; border: none; }}
-    QHeaderView::section {{
-        background-color: #e9ecef; color: #000000; padding: 5px; border: 1px solid #d0d0d0; font-weight: bold;
-    }}
+    QHeaderView::section {{ background-color: #e9ecef; color: #000000; padding: 5px; border: 1px solid #d0d0d0; font-weight: bold; }}
     QSplitter::handle {{ background-color: {COLOR_BORDER}; }}
-    QGroupBox {{ font-weight: bold; border: 1px solid #ccc; margin-top: 10px; padding-top: 15px; border-radius: 5px; }} 
+    QGroupBox {{ font-weight: bold; border: 1px solid #ccc; margin-top: 10px; padding-top: 15px; border-radius: 5px; background: transparent; }} 
     QGroupBox::title {{ subcontrol-origin: margin; subcontrol-position: top left; padding: 0 5px; color: {COLOR_NAVBAR}; }}
 """
+
+class SendMethodDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Send Purchase Order")
+        # INCREASED WIDTH to 600 so "Skip" is never hidden
+        self.setFixedSize(600, 150) 
+        self.setStyleSheet(STYLE_SHEET)
+        self.choice = "NONE"
+
+        layout = QVBoxLayout(self)
+        lbl = QLabel("Order saved successfully!\nHow would you like to send the PO to the supplier?")
+        lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lbl.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+        layout.addWidget(lbl)
+
+        btn_layout = QHBoxLayout()
+        
+        # CHANGED COLORS: Lighter backgrounds with pure BLACK text
+        btn_email = QPushButton("📧 Email")
+        btn_email.setStyleSheet("background-color: #b3d4ff; color: black; padding: 10px; border-radius: 4px; font-weight: bold; font-size: 14px;")
+        
+        btn_wa = QPushButton("💬 WhatsApp")
+        btn_wa.setStyleSheet("background-color: #b3ffc6; color: black; padding: 10px; border-radius: 4px; font-weight: bold; font-size: 14px;")
+        
+        btn_both = QPushButton("📧 + 💬 Both")
+        btn_both.setStyleSheet("background-color: #85e0a3; color: black; padding: 10px; border-radius: 4px; font-weight: bold; font-size: 14px;")
+        
+        btn_skip = QPushButton("Skip / Don't Send")
+        btn_skip.setStyleSheet("background-color: #d9d9d9; color: black; padding: 10px; border-radius: 4px; font-weight: bold; font-size: 14px;")
+
+        btn_email.clicked.connect(lambda: self.make_choice("EMAIL"))
+        btn_wa.clicked.connect(lambda: self.make_choice("WHATSAPP"))
+        btn_both.clicked.connect(lambda: self.make_choice("BOTH"))
+        btn_skip.clicked.connect(lambda: self.make_choice("NONE"))
+
+        btn_layout.addWidget(btn_email)
+        btn_layout.addWidget(btn_wa)
+        btn_layout.addWidget(btn_both)
+        btn_layout.addWidget(btn_skip)
+
+        layout.addLayout(btn_layout)
+
+    def make_choice(self, choice):
+        self.choice = choice
+        self.accept()
 
 class OrdersInterface(QWidget):
     def __init__(self):
@@ -106,10 +160,8 @@ class OrdersInterface(QWidget):
         self.setup_tab_create()
         self.setup_tab_history()
 
-    # ================= TAB 1: ALERTS =================
     def setup_tab_alerts(self):
         layout = QVBoxLayout(self.tab_alerts)
-        
         filter_layout = QHBoxLayout()
         self.txt_search_alert = QLineEdit()
         self.txt_search_alert.setPlaceholderText("🔍 Search Product...")
@@ -119,8 +171,7 @@ class OrdersInterface(QWidget):
         self.combo_type_filter.setView(QListView()) 
         self.combo_type_filter.addItem("All Types")
         self.combo_type_filter.addItems(["Tablet", "Capsule", "Syrup", "Injection", "Cream", 
-            "Ointment", "Drops", "Personal Care & Wellness", 
-            "Spray", "Powder", "Medical Devices"])
+            "Ointment", "Drops", "Personal Care & Wellness", "Spray", "Powder", "Medical Devices"])
         self.combo_type_filter.currentIndexChanged.connect(self.load_alerts)
 
         btn_add_selected = QPushButton("Add Selected to Order List")
@@ -137,9 +188,7 @@ class OrdersInterface(QWidget):
         self.alert_table.setHorizontalHeaderLabels(["Select", "Product Name", "Type", "Stock Qty", "Expiry Date", "Status"])
         self.alert_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.alert_table.setColumnWidth(0, 60)
-        
         self.alert_table.verticalHeader().setDefaultSectionSize(45) 
-        
         self.alert_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.alert_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         layout.addWidget(self.alert_table)
@@ -150,12 +199,9 @@ class OrdersInterface(QWidget):
         
         conn = database.get_connection()
         cursor = conn.cursor()
-        
         query = """
             SELECT d.prod_name, d.type, SUM(s.quantity), MIN(s.exp_date)
-            FROM Product_Details d
-            LEFT JOIN Product_Stock s ON d.prod_id = s.prod_id
-            GROUP BY d.prod_id
+            FROM Product_Details d LEFT JOIN Product_Stock s ON d.prod_id = s.prod_id GROUP BY d.prod_id
         """
         cursor.execute(query)
         rows = cursor.fetchall()
@@ -163,7 +209,6 @@ class OrdersInterface(QWidget):
 
         self.alert_table.setRowCount(0)
         self.selected_alerts.clear() 
-        
         today = datetime.date.today()
         row_idx = 0
         
@@ -173,7 +218,6 @@ class OrdersInterface(QWidget):
             if prod_type != "All Types" and prod_type.lower() != str(m_type).lower(): continue
 
             qty = qty if qty is not None else 0
-            
             is_low_stock = (qty < 20)
             is_expiring = False
             
@@ -184,14 +228,11 @@ class OrdersInterface(QWidget):
                           exp_date = datetime.date(2000+y, m, 1)
                     else:
                           exp_date = datetime.datetime.strptime(exp_date_str, "%Y-%m-%d").date()
-                    
-                    days_left = (exp_date - today).days
-                    if days_left < 120: is_expiring = True
+                    if (exp_date - today).days < 120: is_expiring = True
             except: pass
 
             if is_low_stock or is_expiring:
                 self.alert_table.insertRow(row_idx)
-                
                 cell_widget = QWidget()
                 layout = QHBoxLayout(cell_widget)
                 layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -202,7 +243,6 @@ class OrdersInterface(QWidget):
                 
                 layout.addWidget(chk)
                 self.alert_table.setCellWidget(row_idx, 0, cell_widget)
-                
                 self.alert_table.setItem(row_idx, 1, self.create_item(name))
                 self.alert_table.setItem(row_idx, 2, self.create_item(str(m_type)))
                 self.alert_table.setItem(row_idx, 3, self.create_item(str(qty)))
@@ -216,19 +256,16 @@ class OrdersInterface(QWidget):
                 lbl_status.setForeground(QColor(COLOR_DANGER)) 
                 lbl_status.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
                 self.alert_table.setItem(row_idx, 5, lbl_status)
-                
                 row_idx += 1
 
     def toggle_alert_selection(self, checked, prod_name, row):
         cell_widget = self.alert_table.cellWidget(row, 0)
         if checked:
             self.selected_alerts.add(prod_name)
-            if cell_widget:
-                cell_widget.setStyleSheet("background-color: #d0e1f5;")
+            if cell_widget: cell_widget.setStyleSheet("background-color: #d0e1f5;")
         else:
             self.selected_alerts.discard(prod_name)
-            if cell_widget:
-                cell_widget.setStyleSheet("background-color: transparent;")
+            if cell_widget: cell_widget.setStyleSheet("background-color: transparent;")
 
     def add_alerts_to_cart(self):
         if not self.selected_alerts:
@@ -247,10 +284,8 @@ class OrdersInterface(QWidget):
         self.selected_alerts.clear()
         self.load_alerts()
 
-    # ================= TAB 2: CREATE ORDER =================
     def setup_tab_create(self):
         layout = QVBoxLayout(self.tab_create)
-        
         grp_supp = QGroupBox("Supplier Information")
         supp_layout = QVBoxLayout(grp_supp)
         
@@ -278,7 +313,6 @@ class OrdersInterface(QWidget):
 
         grp_add = QGroupBox("Add Product to Order")
         add_layout = QHBoxLayout(grp_add)
-        
         self.txt_new_item = QLineEdit()
         self.txt_new_item.setPlaceholderText("Type Product Name...")
         self.setup_product_completer() 
@@ -305,14 +339,17 @@ class OrdersInterface(QWidget):
         self.cart_table.verticalHeader().setDefaultSectionSize(45) 
         layout.addWidget(self.cart_table)
 
-        self.btn_save = QPushButton("Save Order, Generate PDF & Email")
+        self.btn_save = QPushButton("Save Order & Generate PDF")
         self.btn_save.setFixedHeight(45)
         self.btn_save.setStyleSheet(f"background-color: {COLOR_ACCENT}; color: white; font-weight: bold; font-size: 15px;")
         self.btn_save.clicked.connect(self.save_order)
         layout.addWidget(self.btn_save)
         
+        # INCREASED WIDTH of Clear Form Button
         self.btn_cancel_edit = QPushButton("Cancel Editing / Clear Form")
-        self.btn_cancel_edit.setStyleSheet("background-color: #6c757d; color: white;")
+        self.btn_cancel_edit.setMinimumWidth(300) 
+        self.btn_cancel_edit.setFixedHeight(35)
+        self.btn_cancel_edit.setStyleSheet("background-color: #6c757d; color: white; font-weight: bold;")
         self.btn_cancel_edit.clicked.connect(self.clear_form)
         layout.addWidget(self.btn_cancel_edit)
 
@@ -322,7 +359,6 @@ class OrdersInterface(QWidget):
         cursor.execute("SELECT Sup_name FROM Supplier")
         suppliers = [row[0] for row in cursor.fetchall()]
         conn.close()
-        
         completer = QCompleter(suppliers)
         completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
         completer.setFilterMode(Qt.MatchFlag.MatchContains) 
@@ -334,7 +370,6 @@ class OrdersInterface(QWidget):
         cursor.execute("SELECT prod_name FROM Product_Details")
         products = [row[0] for row in cursor.fetchall()]
         conn.close()
-
         completer = QCompleter(products)
         completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
         completer.setFilterMode(Qt.MatchFlag.MatchContains)
@@ -418,9 +453,51 @@ class OrdersInterface(QWidget):
         self.txt_supp_phone.clear()
         self.txt_supp_email.clear()
         self.current_po_id = None
-        self.btn_save.setText("Save Order, Generate PDF & Email")
+        self.btn_save.setText("Save Order & Generate PDF")
         self.btn_cancel_edit.setText("Cancel Editing / Clear Form")
 
+    # === WHATSAPP AUTOMATION LOGIC (WINDOWS ONLY) ===
+    def send_po_via_whatsapp(self, supplier_phone, po_id, pdf_path):
+        if sys.platform != 'win32':
+             QMessageBox.warning(self, "Not Supported", "WhatsApp automation is only supported on Windows.")
+             return
+
+        clean_phone = str(supplier_phone).replace("+", "").replace(" ", "").replace("-", "")
+        if len(clean_phone) == 10:
+            clean_phone = "91" + clean_phone 
+            
+        message = f"Hello,\n\nPlease find attached a new Purchase Order (#{po_id}) from our Pharmacy.\nKindly confirm receipt and process the order.\nThank you!"
+        encoded_message = urllib.parse.quote(message)
+        whatsapp_url = f"https://wa.me/{clean_phone}?text={encoded_message}"
+        
+        # 1. Add the file to the system clipboard
+        if pdf_path and os.path.exists(pdf_path):
+            clipboard = QApplication.clipboard()
+            mime_data = QMimeData()
+            mime_data.setUrls([QUrl.fromLocalFile(os.path.abspath(pdf_path))])
+            clipboard.setMimeData(mime_data)
+
+        # 2. Open WhatsApp Web/Desktop
+        webbrowser.open(whatsapp_url)
+        
+        # 3. Use PyAutoGUI to simulate pasting the file (Ctrl + V)
+        if pdf_path and os.path.exists(pdf_path):
+            try:
+                # Give WhatsApp Web/Desktop 8 seconds to open and load the chat window
+                time.sleep(8) 
+                
+                # Simulate pressing Ctrl + V to paste the copied PDF
+                pyautogui.hotkey('ctrl', 'v')
+                
+                # Wait 2 seconds for the attachment preview to load, then hit Enter to send
+                time.sleep(2)
+                pyautogui.press('enter')
+            except Exception as e:
+                 print(f"Automation Error: {e}")
+                 QMessageBox.warning(self, "Automation Failed", "Could not auto-paste. Please press Ctrl+V in WhatsApp manually.")
+
+
+    # === MAIN SAVE LOGIC ===
     def save_order(self):
         supp_name = self.txt_supp_name.text().strip()
         phone = self.txt_supp_phone.text().strip()
@@ -464,18 +541,50 @@ class OrdersInterface(QWidget):
             
             conn.commit()
             
+            # Generate the PDF
             pdf_path = self.generate_pdf(po_id, supp_name, phone, email, today_str)
-            
-            email_status = "Email Not Sent (No address)"
-            if email:
-                if self.send_email_to_supplier(pdf_path, email, supp_name, po_id):
-                    email_status = "Email Sent Successfully!"
-                    cursor.execute("UPDATE Purchase_order SET status='Sent' WHERE po_id=?", (po_id,))
-                    conn.commit()
-                else:
-                    email_status = "Email Failed (Check Settings in 'Pharmacy' Tab)"
 
-            QMessageBox.information(self, "Success", f"{msg_text}\n{email_status}")
+            # --- POPUP DIALOG FOR SENDING ---
+            dlg = SendMethodDialog(self)
+            dlg.exec()
+
+            email_status = ""
+            wa_status = ""
+            
+            # --- HANDLE EMAIL ---
+            if dlg.choice in ["EMAIL", "BOTH"]:
+                if email:
+                    if self.send_email_to_supplier(pdf_path, email, supp_name, po_id):
+                        email_status = "- Email Sent Successfully!\n"
+                        cursor.execute("UPDATE Purchase_order SET status='Sent' WHERE po_id=?", (po_id,))
+                    else:
+                        email_status = "- Email Failed (Check SMTP Settings).\n"
+                else:
+                    email_status = "- Email Failed (No email address provided).\n"
+
+            # --- HANDLE WHATSAPP ---
+            if dlg.choice in ["WHATSAPP", "BOTH"]:
+                if phone:
+                    # Ensure pyautogui is available before trying
+                    if sys.platform == 'win32' and 'pyautogui' in sys.modules:
+                        self.send_po_via_whatsapp(phone, po_id, pdf_path)
+                        wa_status = "- WhatsApp Opened & File Auto-Attached!\n"
+                        cursor.execute("UPDATE Purchase_order SET status='Sent' WHERE po_id=?", (po_id,))
+                    else:
+                         QMessageBox.warning(self, "WhatsApp Error", "WhatsApp automation requires Windows and the 'pyautogui' library installed.")
+                         wa_status = "- WhatsApp Failed (Missing requirements).\n"
+                else:
+                    wa_status = "- WhatsApp Failed (No phone number provided).\n"
+
+            conn.commit()
+            
+            # Final Message to user
+            final_msg = f"{msg_text}\n\n{email_status}{wa_status}"
+            if dlg.choice == "NONE":
+                final_msg += "- Order saved without sending."
+                
+            QMessageBox.information(self, "Success", final_msg)
+            
             self.clear_form()
             self.load_order_history()
             
@@ -485,7 +594,16 @@ class OrdersInterface(QWidget):
             conn.close()
 
     def generate_pdf(self, po_id, s_name, s_phone, s_email, date_str):
+        # CREATE A SPECIFIC FOLDER FOR PDFs
+        base_dir = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
+        if hasattr(sys, 'frozen'):
+            base_dir = os.path.dirname(sys.executable)
+            
+        po_folder = os.path.join(base_dir, "Purchase_Orders")
+        os.makedirs(po_folder, exist_ok=True)
+        
         filename = f"Order_{po_id}_{s_name.replace(' ', '_')}.pdf"
+        filepath = os.path.join(po_folder, filename)
         
         if 'SimpleDocTemplate' not in globals():
             return None
@@ -503,7 +621,7 @@ class OrdersInterface(QWidget):
             p_phone = pharmacy[2] if pharmacy[2] else ""
             p_email = pharmacy[3] if pharmacy[3] else ""
 
-        doc = SimpleDocTemplate(filename, pagesize=letter)
+        doc = SimpleDocTemplate(filepath, pagesize=letter)
         elements = []
         styles = getSampleStyleSheet()
         
@@ -549,25 +667,21 @@ class OrdersInterface(QWidget):
         elements.append(table)
         elements.append(Spacer(1, 40))
         
-        
         try:
             doc.build(elements)
-            return filename
+            return filepath # Returning the full file path
         except Exception as e:
             print(f"PDF Error: {e}")
             return None
 
     def get_email_credentials(self):
-        """Fetches SMTP email and password from the Pharmacy table."""
         conn = database.get_connection()
         if not conn: return None, None
         cursor = conn.cursor()
         try:
-            # Check if columns exist first to avoid crash if migration failed
             cursor.execute("SELECT smtp_email, smtp_password FROM Pharmacy LIMIT 1")
             row = cursor.fetchone()
-            if row:
-                return row[0], row[1]
+            if row: return row[0], row[1]
         except Exception as e:
             print(f"Error fetching email credentials: {e}")
         finally:
@@ -608,23 +722,19 @@ class OrdersInterface(QWidget):
             print(f"SMTP Error: {e}")
             return False
 
-    # ================= TAB 3: HISTORY =================
     def setup_tab_history(self):
         layout = QVBoxLayout(self.tab_history)
-        
         btn_refresh = QPushButton("⟳ Refresh History")
+        btn_refresh.setStyleSheet(f"background-color: {COLOR_NAVBAR}; color: white; padding: 5px; font-weight: bold;")
         btn_refresh.clicked.connect(self.load_order_history)
         layout.addWidget(btn_refresh)
         
         splitter = QSplitter(Qt.Orientation.Horizontal)
-        
         self.history_table = QTableWidget()
         self.history_table.setColumnCount(4)
         self.history_table.setHorizontalHeaderLabels(["Order ID", "Supplier", "Date", "Status"])
         self.history_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        
         self.history_table.verticalHeader().setDefaultSectionSize(45)
-
         self.history_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.history_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.history_table.itemSelectionChanged.connect(self.on_history_selection_changed)
@@ -635,7 +745,6 @@ class OrdersInterface(QWidget):
         self.preview_frame.setVisible(False) 
         
         prev_layout = QVBoxLayout(self.preview_frame)
-        
         hdr_layout = QHBoxLayout()
         self.lbl_prev_info = QLabel("Order Details")
         self.lbl_prev_info.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
@@ -652,15 +761,17 @@ class OrdersInterface(QWidget):
         self.combo_status = QComboBox()
         self.combo_status.addItems(["Created", "Sent", "Received", "Declined"])
         self.btn_update_status = QPushButton("Update")
-        self.btn_update_status.setFixedWidth(100) # Resized Width
+        self.btn_update_status.setMinimumWidth(120)
         self.btn_update_status.clicked.connect(self.update_order_status)
         status_layout.addWidget(self.combo_status)
         status_layout.addWidget(self.btn_update_status)
         prev_layout.addLayout(status_layout)
         
+        # INCREASED WIDTH of Edit Button
         self.btn_edit_resend = QPushButton("✎ Edit / Resend Order")
-        self.btn_edit_resend.setFixedWidth(200) # Resized Width
-        self.btn_edit_resend.setStyleSheet(f"background-color: {COLOR_NAVBAR}; color: white;")
+        self.btn_edit_resend.setMinimumWidth(250)
+        self.btn_edit_resend.setFixedHeight(35)
+        self.btn_edit_resend.setStyleSheet(f"background-color: {COLOR_NAVBAR}; color: white; font-weight: bold;")
         self.btn_edit_resend.clicked.connect(self.load_order_for_editing)
         prev_layout.addWidget(self.btn_edit_resend)
 
@@ -680,9 +791,7 @@ class OrdersInterface(QWidget):
         cursor = conn.cursor()
         cursor.execute("""
             SELECT po.po_id, s.Sup_name, po.order_date, po.status 
-            FROM Purchase_order po
-            JOIN Supplier s ON po.supp_id = s.Supp_id
-            ORDER BY po.po_id DESC
+            FROM Purchase_order po JOIN Supplier s ON po.supp_id = s.Supp_id ORDER BY po.po_id DESC
         """)
         rows = cursor.fetchall()
         conn.close()
@@ -715,12 +824,9 @@ class OrdersInterface(QWidget):
         
         conn = database.get_connection()
         cursor = conn.cursor()
-        
         cursor.execute("""
-            SELECT d.prod_name, pi.Quantity 
-            FROM PO_item pi 
-            JOIN Product_Details d ON pi.Prod_id = d.prod_id
-            WHERE pi.po_id = ?
+            SELECT d.prod_name, pi.Quantity FROM PO_item pi 
+            JOIN Product_Details d ON pi.Prod_id = d.prod_id WHERE pi.po_id = ?
         """, (po_id,))
         items = cursor.fetchall()
         conn.close()
@@ -759,10 +865,8 @@ class OrdersInterface(QWidget):
         conn = database.get_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT d.prod_name, pi.Quantity 
-            FROM PO_item pi 
-            JOIN Product_Details d ON pi.Prod_id = d.prod_id
-            WHERE pi.po_id = ?
+            SELECT d.prod_name, pi.Quantity FROM PO_item pi 
+            JOIN Product_Details d ON pi.Prod_id = d.prod_id WHERE pi.po_id = ?
         """, (po_id,))
         items = cursor.fetchall()
         

@@ -1,3 +1,5 @@
+import os
+os.environ["QT_LOGGING_RULES"] = "qt.qpa.window=false"
 import sys
 import datetime
 from datetime import timedelta

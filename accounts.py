@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (
     QTextEdit, QAbstractItemView, QSizePolicy, QSpinBox
 )
 from PyQt6.QtCore import Qt, QDate
-from PyQt6.QtGui import QColor, QFont, QIcon
+from PyQt6.QtGui import QColor, QFont
 
 import database
 

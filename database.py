@@ -1,15 +1,21 @@
 import sqlite3
-from sqlite3 import Error
+import os
+import sys
 
-DB_NAME = "pharmacy.db"
+def get_db_path():
+    # If the app is compiled to an .exe, get the folder where the .exe is installed.
+    # Otherwise, use the folder where the python script is.
+    if getattr(sys, 'frozen', False):
+        base_dir = os.path.dirname(sys.executable)
+    else:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        
+    return os.path.join(base_dir, 'pharmacy.db')
 
 def get_connection():
-    try:
-        conn = sqlite3.connect(DB_NAME)
-        return conn
-    except Error as e:
-        print("Database connection error:", e)
-        return None
+    return sqlite3.connect(get_db_path())
+
+# ... keep your init_db() and table creations the same ...
 
 def init_db():
     conn = get_connection()
