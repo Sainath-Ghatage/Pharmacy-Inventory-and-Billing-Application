@@ -1,6 +1,0 @@
-README.md
-setup.py
-PharmacyApp.egg-info/PKG-INFO
-PharmacyApp.egg-info/SOURCES.txt
-PharmacyApp.egg-info/dependency_links.txt
-PharmacyApp.egg-info/top_level.txt
