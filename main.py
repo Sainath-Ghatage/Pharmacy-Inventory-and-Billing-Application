@@ -242,7 +242,7 @@ class MainWindow(QWidget):
         add_nav_btn("Billing", "Billing / POS")
 
         # 2. INVENTORY
-        add_header("Inventory && Procurement")
+        add_header("Inventory & Procurement")
         add_nav_btn("Inventory", "Product Stock")
         add_nav_btn("Purchase Entry", "Purchase Invoice") 
         add_nav_btn("Purchase Returns", "Purchase Returns")

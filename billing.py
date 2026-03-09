@@ -366,6 +366,20 @@ class SingleBillTab(QWidget):
             QMessageBox.warning(self, "Customer Name Required", "Balance cannot be credited as the customer name is not inserted.")
             return
 
+        # --- NEW: Checkout Confirmation Prompt ---
+        # We ask the user to confirm BEFORE making any database changes.
+        confirm = QMessageBox.question(
+            self, 
+            "Confirm Checkout", 
+            f"Are you sure you want to checkout and save this bill for ₹{total:.2f}?", 
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel
+        )
+        
+        # If the user clicks 'Cancel' or the 'X' close button, we abort the checkout entirely.
+        if confirm != QMessageBox.StandardButton.Yes:
+            return 
+        # -----------------------------------------
+
         pat = pat_input or "Walk-in"
         doc = self.inp_doctor.text().strip()
         
@@ -404,6 +418,7 @@ class SingleBillTab(QWidget):
             
             conn.commit()
             
+            # Since the bill is now saved, we just ask if they want to print the receipt.
             if QMessageBox.question(self, "Saved", f"Bill #{bid} Saved! Print Receipt?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
                 self.print_receipt(bid, pat, doc, total, paid, credit)
             
