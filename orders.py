@@ -335,7 +335,7 @@ class OrdersInterface(QWidget):
         self.cart_table.verticalHeader().setDefaultSectionSize(45) 
         layout.addWidget(self.cart_table)
 
-        self.btn_save = QPushButton("Save Order & Generate PDF")
+        self.btn_save = QPushButton("Save Order && Generate PDF")
         self.btn_save.setFixedHeight(45)
         self.btn_save.setStyleSheet(f"background-color: {COLOR_ACCENT}; color: white; font-weight: bold; font-size: 15px;")
         self.btn_save.clicked.connect(self.save_order)
