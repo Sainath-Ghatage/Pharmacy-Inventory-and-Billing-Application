@@ -221,7 +221,7 @@ class ReportsInterface(QWidget):
         self.tree.setHeaderHidden(True)
         
         self.add_tree_item("Sales Reports", ["Daily Sales Journal", "Customer/Patient Sales", "Doctor Wise Sales", "Product Wise Sales"])
-        self.add_tree_item("Stock Reports", ["Current Stock Report", "Batch Wise Stock", "Rack Wise Stock", "Supplier Stock Report", "Slow Moving Products", "Excess Stock (>100)", "Fast Moving (Non-Stop)"])
+        self.add_tree_item("Stock Reports", ["Current Stock Report", "Batch Wise Stock", "Rack Wise Stock", "Supplier Stock Report", "Slow Moving Products", "Excess Stock", "Fast Moving "])
         self.add_tree_item("Procurement & Returns", ["Purchase Returns Details"])
         self.add_tree_item("Financial Reports", ["Financial Dashboard (P&L)"])
         self.add_tree_item("Visual Analytics", ["Daily Sales Graph", "Monthly Sales Graph"])

@@ -33,7 +33,6 @@ GLOBAL_STYLE = """
     QTableWidget { background-color: white; color: black; gridline-color: #ccc; selection-background-color: #e3f2fd; selection-color: black; }
     QHeaderView::section { background-color: #e0e0e0; color: black; padding: 5px; border: 1px solid #ccc; font-weight: bold; }
     
-    /* FIX: Make the list widget text larger and padded */
     QListWidget { 
         background-color: white; 
         color: black; 
@@ -50,7 +49,6 @@ GLOBAL_STYLE = """
     
     QPushButton { color: white; }
     
-    /* POPUP FIXES */
     QMessageBox { background-color: white; color: black; }
     QMessageBox QLabel { color: black; }
     QMessageBox QPushButton { background-color: #0d47a1; color: white; padding: 5px 15px; border-radius: 3px; }
@@ -66,7 +64,7 @@ class SingleBillTab(QWidget):
         self.current_selected_stock = None
         self.customer_names = []
         self.doctor_names = []
-        self.editing_bill_id = None  # Track if we are editing an existing bill
+        self.editing_bill_id = None  
         
         self.init_ui()
         self.refresh_cache()
@@ -119,7 +117,7 @@ class SingleBillTab(QWidget):
         action_layout.setVerticalSpacing(10)
         self.spin_strips = QSpinBox(); self.spin_strips.setRange(0, 9999); self.spin_strips.setFixedHeight(40)
         self.spin_loose = QSpinBox(); self.spin_loose.setRange(0, 9999); self.spin_loose.setFixedHeight(40)
-        self.spin_disc = QDoubleSpinBox(); self.spin_disc.setRange(0, 100); self.spin_disc.setFixedHeight(40); self.spin_disc.setSuffix("%")
+        self.spin_disc = QDoubleSpinBox(); self.spin_disc.setRange(0, 100); self.spin_disc.setFixedHeight(40); self.spin_disc.setSuffix(" %")
         self.btn_add = QPushButton("ADD TO BILL ➔")
         self.btn_add.setFixedHeight(45)
         self.btn_add.clicked.connect(self.add_to_cart)
@@ -127,7 +125,7 @@ class SingleBillTab(QWidget):
         
         l1=QLabel("Strips/Boxes:"); l1.setStyleSheet("color:black;"); action_layout.addWidget(l1, 0, 0); action_layout.addWidget(self.spin_strips, 0, 1)
         l2=QLabel("Units/Loose:"); l2.setStyleSheet("color:black;"); action_layout.addWidget(l2, 0, 2); action_layout.addWidget(self.spin_loose, 0, 3)
-        l3=QLabel("Disc %:"); l3.setStyleSheet("color:black;"); action_layout.addWidget(l3, 1, 0); action_layout.addWidget(self.spin_disc, 1, 1)
+        l3=QLabel("Item Disc %:"); l3.setStyleSheet("color:black;"); action_layout.addWidget(l3, 1, 0); action_layout.addWidget(self.spin_disc, 1, 1)
         action_layout.addWidget(self.btn_add, 2, 0, 1, 4)
         left_layout.addLayout(action_layout)
 
@@ -148,10 +146,9 @@ class SingleBillTab(QWidget):
 
         self.table = QTableWidget()
         self.table.setColumnCount(9)
-        # REORGANIZED: Rate before Qty
         self.table.setHorizontalHeaderLabels(["Product Name", "Batch", "Exp", "Rate", "Qty", "GST", "Disc", "Total", "Del"])
         
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents) # Allows Name to expand
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents) 
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.setMinimumWidth(600) 
         
@@ -161,18 +158,49 @@ class SingleBillTab(QWidget):
         self.table.cellClicked.connect(self.load_item_from_cart)
         right_layout.addWidget(self.table)
 
+        # --- FOOTER: Overall Discount in Percentage ---
         footer_layout = QGridLayout()
-        self.cmb_payment = QComboBox(); self.cmb_payment.addItems(["Cash", "UPI", "Card", "Credit"]); self.cmb_payment.setFixedHeight(35)
-        self.lbl_grand_total = QLabel("Total: ₹0.00"); self.lbl_grand_total.setStyleSheet(f"font-size: 20px; font-weight: bold; color: {COLOR_NAVBAR}; border: none;")
-        self.lbl_balance = QLabel("Balance: ₹0.00"); self.lbl_balance.setStyleSheet(f"font-size: 14px; font-weight: bold; color: {COLOR_RED_BTN}; border: none;")
-        self.spin_paid = QDoubleSpinBox(); self.spin_paid.setRange(0, 999999); self.spin_paid.setPrefix("Paid: ₹ "); self.spin_paid.setFixedHeight(35); self.spin_paid.valueChanged.connect(self.calculate_balance)
+        
+        self.cmb_payment = QComboBox()
+        self.cmb_payment.addItems(["Cash", "UPI", "Card", "Credit"])
+        self.cmb_payment.setFixedHeight(35)
+        
+        self.spin_overall_disc = QDoubleSpinBox()
+        self.spin_overall_disc.setRange(0, 100) # Changed to max 100 for percentage
+        self.spin_overall_disc.setSuffix(" %")  # Changed to Percentage suffix
+        self.spin_overall_disc.setFixedHeight(35)
+        self.spin_overall_disc.valueChanged.connect(self.refresh_table)
+        
+        self.lbl_grand_total = QLabel("Total: ₹0.00")
+        self.lbl_grand_total.setStyleSheet(f"font-size: 20px; font-weight: bold; color: {COLOR_NAVBAR}; border: none;")
+        
+        self.spin_paid = QDoubleSpinBox()
+        self.spin_paid.setRange(0, 999999)
+        self.spin_paid.setPrefix("Paid: ₹ ")
+        self.spin_paid.setFixedHeight(35)
+        self.spin_paid.valueChanged.connect(self.calculate_balance)
+
+        self.lbl_balance = QLabel("Balance: ₹0.00")
+        self.lbl_balance.setStyleSheet(f"font-size: 15px; font-weight: bold; color: {COLOR_RED_BTN}; border: none;")
+        
         self.btn_checkout = QPushButton("CHECKOUT && PRINT")
-        self.btn_checkout.setFixedHeight(50); self.btn_checkout.clicked.connect(self.process_checkout)
+        self.btn_checkout.setFixedHeight(50)
+        self.btn_checkout.clicked.connect(self.process_checkout)
         self.btn_checkout.setStyleSheet(f"background-color: {COLOR_GREEN_BTN}; color: white; font-weight: bold; border-radius: 5px; font-size: 15px;")
         
-        footer_layout.addWidget(QLabel("Payment Mode:"), 0, 0); footer_layout.addWidget(self.cmb_payment, 0, 1); footer_layout.addWidget(self.lbl_grand_total, 0, 2, Qt.AlignmentFlag.AlignRight)
-        footer_layout.addWidget(QLabel("Amount Paid:"), 1, 0); footer_layout.addWidget(self.spin_paid, 1, 1); footer_layout.addWidget(self.lbl_balance, 1, 2, Qt.AlignmentFlag.AlignRight)
-        footer_layout.addWidget(self.btn_checkout, 2, 0, 1, 3)
+        # Grid arrangement
+        footer_layout.addWidget(QLabel("Payment Mode:"), 0, 0)
+        footer_layout.addWidget(self.cmb_payment, 0, 1)
+        footer_layout.addWidget(QLabel("Overall Bill Discount:"), 0, 2)
+        footer_layout.addWidget(self.spin_overall_disc, 0, 3)
+
+        footer_layout.addWidget(QLabel("Amount Paid:"), 1, 0)
+        footer_layout.addWidget(self.spin_paid, 1, 1)
+        footer_layout.addWidget(self.lbl_grand_total, 1, 2, 1, 2, Qt.AlignmentFlag.AlignRight)
+
+        footer_layout.addWidget(self.btn_checkout, 2, 0, 1, 2)
+        footer_layout.addWidget(self.lbl_balance, 2, 2, 1, 2, Qt.AlignmentFlag.AlignRight)
+
         right_layout.addLayout(footer_layout)
 
         main_layout.addWidget(left_panel, 35)
@@ -263,7 +291,12 @@ class SingleBillTab(QWidget):
         price = total_units * data['unit_price']
         disc = price * (self.spin_disc.value() / 100)
         
-        qty_str = f"{self.spin_strips.value()}s + {self.spin_loose.value()}l" if tps > 1 else str(total_units)
+        # --- NEW: Smart Auto-Normalization ---
+        # If user types 30 loose units, it auto-calculates "1s + 10l" based on `tps` mathematically!
+        if tps > 1:
+            qty_str = f"{int(total_units) // tps}s + {int(total_units) % tps}l"
+        else:
+            qty_str = str(int(total_units))
         
         item = {
             "stock_id": data['stock_id'], "prod_id": data['prod_id'], "name": data['name'],
@@ -288,14 +321,13 @@ class SingleBillTab(QWidget):
         self.cart_items.pop(r); self.refresh_table()
 
     def refresh_table(self):
-        self.table.setRowCount(0); total = 0
+        self.table.setRowCount(0); subtotal = 0
         for r, it in enumerate(self.cart_items):
             self.table.insertRow(r)
             rate = it['strip_rate'] if it['is_strip'] else it['unit_rate']
             
             def item(t): i = QTableWidgetItem(str(t)); i.setForeground(QBrush(QColor("black"))); return i
             
-            # REORGANIZED INSERTION
             self.table.setItem(r, 0, item(it['name'])); self.table.setItem(r, 1, item(it['batch']))
             self.table.setItem(r, 2, item(it['exp'])); self.table.setItem(r, 3, item(f"{rate:.2f}"))
             self.table.setItem(r, 4, item(it['qty_disp'])); self.table.setItem(r, 5, item(f"{it['gst']}%"))
@@ -304,11 +336,18 @@ class SingleBillTab(QWidget):
             btn = QPushButton("X"); btn.setFixedSize(30, 25); btn.setStyleSheet(f"background:{COLOR_RED_BTN}; border:none; color:white;")
             btn.clicked.connect(lambda _, x=r: self.delete_item(x))
             self.table.setCellWidget(r, 8, btn)
-            total += it['total']
+            subtotal += it['total']
+            
+        # --- NEW: Calculate Overall Discount Percentage ---
+        overall_disc_pct = self.spin_overall_disc.value()
+        overall_disc_amount = subtotal * (overall_disc_pct / 100)
+        total = subtotal - overall_disc_amount
             
         self.lbl_grand_total.setText(f"Total: ₹{total:.2f}")
-        if self.spin_paid.value() == 0: self.spin_paid.setValue(total)
-        else: self.calculate_balance()
+        if self.spin_paid.value() == 0 or self.spin_paid.value() > total: 
+            self.spin_paid.setValue(total)
+        else: 
+            self.calculate_balance()
 
     def calculate_balance(self):
         try: total = float(self.lbl_grand_total.text().replace("Total: ₹", ""))
@@ -321,7 +360,7 @@ class SingleBillTab(QWidget):
         self.editing_bill_id = bill_id
         conn = database.get_connection(); cursor = conn.cursor()
         try:
-            cursor.execute("SELECT patient_name, doctor_name, payment_method, paid_amount FROM Bill WHERE Bill_id=?", (bill_id,))
+            cursor.execute("SELECT patient_name, doctor_name, payment_method, paid_amount, discount FROM Bill WHERE Bill_id=?", (bill_id,))
             head = cursor.fetchone()
             if not head: return
             
@@ -333,6 +372,7 @@ class SingleBillTab(QWidget):
             items = cursor.fetchall()
             
             self.cart_items = []
+            subtotal_for_edit = 0
             for pid, qty, total, name, gst, tps, rack in items:
                 cursor.execute("SELECT stock_id, batch_no, exp_date, quantity, sale_rate FROM Product_Stock WHERE prod_id=? LIMIT 1", (pid,))
                 stock = cursor.fetchone()
@@ -350,6 +390,16 @@ class SingleBillTab(QWidget):
                                  "unit_price": unit_rate, "exp": exp, "rack": rack, "tabs_per_strip": tps, "gst": gst},
                     "is_strip": tps > 1
                 })
+                subtotal_for_edit += total
+            
+            # --- Auto-calculate percentage to reload into UI safely ---
+            saved_disc_amount = head[4] if len(head)>4 and head[4] else 0
+            calculated_pct = (saved_disc_amount / subtotal_for_edit * 100) if subtotal_for_edit > 0 else 0
+            
+            self.spin_overall_disc.blockSignals(True)
+            self.spin_overall_disc.setValue(calculated_pct)
+            self.spin_overall_disc.blockSignals(False)
+            
             self.refresh_table()
         finally: conn.close()
 
@@ -362,12 +412,14 @@ class SingleBillTab(QWidget):
         credit = total - paid
         pat_input = self.inp_patient.text().strip()
         
+        subtotal = sum(item['total'] for item in self.cart_items)
+        overall_disc_pct = self.spin_overall_disc.value()
+        overall_disc_amount = subtotal * (overall_disc_pct / 100)
+        
         if credit >= 1.0 and not pat_input:
             QMessageBox.warning(self, "Customer Name Required", "Balance cannot be credited as the customer name is not inserted.")
             return
 
-        # --- NEW: Checkout Confirmation Prompt ---
-        # We ask the user to confirm BEFORE making any database changes.
         confirm = QMessageBox.question(
             self, 
             "Confirm Checkout", 
@@ -375,10 +427,8 @@ class SingleBillTab(QWidget):
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel
         )
         
-        # If the user clicks 'Cancel' or the 'X' close button, we abort the checkout entirely.
         if confirm != QMessageBox.StandardButton.Yes:
             return 
-        # -----------------------------------------
 
         pat = pat_input or "Walk-in"
         doc = self.inp_doctor.text().strip()
@@ -401,8 +451,9 @@ class SingleBillTab(QWidget):
                 cursor.execute("DELETE FROM Bill_Item WHERE Bill_id=?", (self.editing_bill_id,))
                 cursor.execute("DELETE FROM Bill WHERE Bill_id=?", (self.editing_bill_id,))
 
-            cursor.execute("INSERT INTO Bill (patient_name, doctor_name, payment_method, total_sum, paid_amount, balance, bill_date) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))", 
-                           (pat, doc, self.cmb_payment.currentText(), total, paid, credit))
+            # --- Saves the calculated discount amount to the database ---
+            cursor.execute("INSERT INTO Bill (patient_name, doctor_name, payment_method, total_sum, discount, paid_amount, balance, bill_date) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))", 
+                           (pat, doc, self.cmb_payment.currentText(), total, overall_disc_amount, paid, credit))
             bid = cursor.lastrowid
             
             for it in self.cart_items:
@@ -418,12 +469,15 @@ class SingleBillTab(QWidget):
             
             conn.commit()
             
-            # Since the bill is now saved, we just ask if they want to print the receipt.
             if QMessageBox.question(self, "Saved", f"Bill #{bid} Saved! Print Receipt?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
                 self.print_receipt(bid, pat, doc, total, paid, credit)
             
             self.cart_items = []; self.refresh_table(); self.inp_patient.clear(); self.inp_doctor.clear()
             self.spin_paid.setValue(0); self.editing_bill_id = None 
+            
+            self.spin_overall_disc.blockSignals(True)
+            self.spin_overall_disc.setValue(0)
+            self.spin_overall_disc.blockSignals(False)
 
         except Exception as e: conn.rollback(); QMessageBox.critical(self, "Error", str(e))
         finally: conn.close()
@@ -433,7 +487,6 @@ class SingleBillTab(QWidget):
         cur = conn.cursor()
         
         try:
-            # Added license_no and fssai_no
             cur.execute("SELECT p_name, phone, email, location, GSTIN, printer_type, license_no, fssai_no FROM Pharmacy LIMIT 1")
             ph = cur.fetchone()
         except sqlite3.OperationalError:
@@ -449,25 +502,22 @@ class SingleBillTab(QWidget):
         addr = ph[3] if ph and ph[3] else ""
         gstin_val = ph[4] if ph and ph[4] else ""
         printer_type = ph[5] if ph and len(ph) > 5 and ph[5] else "Thermal Printer (80mm/58mm)"
-        
-        # Extract the new license details
         drug_license = ph[6] if ph and len(ph) > 6 and ph[6] else ""
         fssai_no = ph[7] if ph and len(ph) > 7 and ph[7] else ""
-        
         now_str = datetime.datetime.now().strftime('%d-%m-%Y %H:%M')
         
+        # --- NEW: Calculating the Subtotal and Percentage for Print ---
+        subtotal = sum(i['total'] for i in self.cart_items)
+        overall_disc_pct = self.spin_overall_disc.value()
+        overall_disc_amount = subtotal * (overall_disc_pct / 100)
+        
         total_gst_amount = 0.0
-        total_discount_amount = 0.0
-
         for i in self.cart_items:
             gst_pct = float(i.get('gst', 0))
             item_gst_amount = i['total'] - (i['total'] / (1 + (gst_pct / 100)))
             total_gst_amount += item_gst_amount
-            total_discount_amount += float(i.get('disc', 0))
 
         if "Thermal" in printer_type:
-            # --- 1. THERMAL PRINTER HTML LAYOUT ---
-            # Clean string formatting to prevent empty lines
             phone_str = f"Phone: {phone}<br>" if phone else ""
             email_str = f"Email: {email}<br>" if email else ""
             gst_str = f"GSTIN: {gstin_val}<br>" if gstin_val else ""
@@ -518,8 +568,9 @@ class SingleBillTab(QWidget):
                 <hr style='border-top: 1px dashed black; margin: 10px 0;'>
                 
                 <table width='100%' style='font-size: 12px;'>
-                    <tr><td align='right'>GST Amount:</td><td align='right' width='35%'>₹{total_gst_amount:.2f}</td></tr>
-                    <tr><td align='right'>Discount:</td><td align='right'>₹{total_discount_amount:.2f}</td></tr>
+                    <tr><td align='right'>Subtotal:</td><td align='right' width='35%'>₹{subtotal:.2f}</td></tr>
+                    <tr><td align='right'>GST Included:</td><td align='right'>₹{total_gst_amount:.2f}</td></tr>
+                    <tr><td align='right'>Bill Discount ({overall_disc_pct:g}%):</td><td align='right'>-₹{overall_disc_amount:.2f}</td></tr>
                     <tr><td align='right' style='font-size: 14px;'><b>Grand Total:</b></td><td align='right' style='font-size: 14px;'><b>₹{total:.2f}</b></td></tr>
                 </table>
                 
@@ -529,12 +580,9 @@ class SingleBillTab(QWidget):
             """
             
         else:
-            # --- 2. LASER / INKJET (A4) PRINTER HTML LAYOUT ---
             contact_str = f"Ph: {phone}" if phone else ""
             email_str = f" | Email: {email}" if email else ""
             gstin_str = f"<br>GSTIN: {gstin_val}" if gstin_val else ""
-            
-            # Inline formatting for A4 layout
             dl_str = f" | DL No: {drug_license}" if drug_license else ""
             fssai_str = f" | FSSAI: {fssai_no}" if fssai_no else ""
             
@@ -581,8 +629,9 @@ class SingleBillTab(QWidget):
             html += f"""</table>
             
             <table width='100%' style='margin-top: 15px;'>
+                <tr><td align='right'>Subtotal: ₹{subtotal:.2f}</td></tr>
                 <tr><td align='right'>Total GST Included: ₹{total_gst_amount:.2f}</td></tr>
-                <tr><td align='right'>Total Discount: ₹{total_discount_amount:.2f}</td></tr>
+                <tr><td align='right'>Bill Discount ({overall_disc_pct:g}%): -₹{overall_disc_amount:.2f}</td></tr>
                 <tr><td align='right' style='font-size: 16px;'><b>Grand Total: ₹{total:.2f}</b></td></tr>
                 <tr><td align='right'>Paid Amount: ₹{paid:.2f}</td></tr>"""
                 
