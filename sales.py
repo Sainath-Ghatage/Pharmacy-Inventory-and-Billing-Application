@@ -157,9 +157,10 @@ class SalesInterface(QWidget):
         btn_edit.clicked.connect(self.request_edit_bill)
         btn_edit.setStyleSheet(f"background-color: {COLOR_EDIT}; color: black; border-radius: 5px; padding: 8px; font-weight: bold;")
         
-        btn_del = QPushButton("✕ Delete Bill")
+        btn_del = QPushButton("Delete Bill")
+        btn_del.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_del.clicked.connect(self.delete_current_bill)
-        btn_del.setStyleSheet(f"background-color: {COLOR_DELETE}; color: white; border-radius: 5px; padding: 8px; font-weight: bold;")
+        btn_del.setStyleSheet(f"QPushButton {{ background-color: {COLOR_DELETE}; color: white; border-radius: 5px; padding: 8px; font-weight: bold; border: none; }} QPushButton:hover {{ background-color: #c82333; }}")
         
         action_layout.addWidget(btn_edit)
         action_layout.addWidget(btn_del)

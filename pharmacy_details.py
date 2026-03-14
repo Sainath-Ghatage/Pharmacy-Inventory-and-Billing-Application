@@ -400,6 +400,7 @@ class PharmacyDetailsInterface(QWidget):
                 cursor.execute("""
                     UPDATE Pharmacy 
                     SET p_name=?, phone=?, email=?, GSTIN=?, license_no=?, location=?, smtp_email=?, smtp_password=?, printer_type=?, fssai_no=?
+                    WHERE rowid = (SELECT MIN(rowid) FROM Pharmacy)
                 """, data)
 
             conn.commit()

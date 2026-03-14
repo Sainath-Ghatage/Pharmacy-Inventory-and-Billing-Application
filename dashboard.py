@@ -157,14 +157,16 @@ class DashboardInterface(QWidget):
             cursor.execute("SELECT SUM(total_sum) FROM Bill WHERE date(bill_date) = ?", (today_str,))
             sales = cursor.fetchone()[0] or 0.0
             self.update_card(self.card_sales, f"₹{sales:,.2f}", "Daily Revenue")
-        except: pass
+        except sqlite3.Error as e:
+            print(f"Sales query error: {e}")
 
         # 2. Today's Expenses
         try:
             cursor.execute("SELECT SUM(amount) FROM Expenses WHERE date(expense_date) = ?", (today_str,))
             exp = cursor.fetchone()[0] or 0.0
             self.update_card(self.card_expenses, f"₹{exp:,.2f}", "Daily Overhead")
-        except: pass
+        except sqlite3.Error as e:
+            print(f"Expenses query error: {e}")
 
         # 3. Low Stock Check
         try:
@@ -196,12 +198,12 @@ class DashboardInterface(QWidget):
                         m, y = map(int, exp.split('/'))
                         exp_dt = datetime.date(2000 + y, m, 1)
                         days_left = (exp_dt - today).days
-                    except: pass
+                    except (ValueError, TypeError): pass
                 else: # Handle YYYY-MM-DD
                     try:
                         exp_dt = datetime.datetime.strptime(exp, "%Y-%m-%d").date()
                         days_left = (exp_dt - today).days
-                    except: pass
+                    except (ValueError, TypeError): pass
                 
                 if days_left <= 30: # If expiring within 30 days
                     exp_count += 1
@@ -253,7 +255,7 @@ class DashboardInterface(QWidget):
             try:
                 cursor.execute("SELECT Bill_id, patient, total_sum, bill_date FROM Bill ORDER BY Bill_id DESC LIMIT 10")
                 rows = cursor.fetchall()
-            except:
+            except sqlite3.OperationalError:
                 rows = []
         
         for bid, pat, amt, date in rows:

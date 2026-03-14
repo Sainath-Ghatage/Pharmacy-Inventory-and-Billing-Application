@@ -242,7 +242,7 @@ class SingleBillTab(QWidget):
                 if "/" in exp: m, y = map(int, exp.split('/')); exp_dt = datetime.date(2000+y, m, 1)
                 else: exp_dt = datetime.datetime.strptime(exp, "%Y-%m-%d").date()
                 if (exp_dt - today).days < 0: is_expired = True
-            except: pass
+            except (ValueError, TypeError): pass
 
             disp_qty = f"{int(qty)//tps}s + {int(qty)%tps}l" if tps > 1 else str(qty)
             text_label = f"{name} | Batch: {batch} | Stock: {disp_qty}"
@@ -333,7 +333,7 @@ class SingleBillTab(QWidget):
             self.table.setItem(r, 4, item(it['qty_disp'])); self.table.setItem(r, 5, item(f"{it['gst']}%"))
             self.table.setItem(r, 6, item(f"{it['disc']:.2f}")); self.table.setItem(r, 7, item(f"{it['total']:.2f}"))
             
-            btn = QPushButton("X"); btn.setFixedSize(30, 25); btn.setStyleSheet(f"background:{COLOR_RED_BTN}; border:none; color:white;")
+            btn = QPushButton("X"); btn.setFixedSize(30, 25); btn.setCursor(Qt.CursorShape.PointingHandCursor); btn.setStyleSheet(f"QPushButton {{ background:{COLOR_RED_BTN}; border:none; color:white; border-radius: 4px; font-weight: bold; }} QPushButton:hover {{ background: #c82333; }}")
             btn.clicked.connect(lambda _, x=r: self.delete_item(x))
             self.table.setCellWidget(r, 8, btn)
             subtotal += it['total']
@@ -351,7 +351,7 @@ class SingleBillTab(QWidget):
 
     def calculate_balance(self):
         try: total = float(self.lbl_grand_total.text().replace("Total: ₹", ""))
-        except: total = 0.0
+        except (ValueError, TypeError): total = 0.0
         bal = total - self.spin_paid.value()
         if bal > 0.01: self.lbl_balance.setText(f"Balance: ₹{bal:.2f}")
         else: self.lbl_balance.setText(f"Change: ₹{abs(bal):.2f}")
@@ -406,7 +406,7 @@ class SingleBillTab(QWidget):
     def process_checkout(self):
         if not self.cart_items: return
         try: total = float(self.lbl_grand_total.text().replace("Total: ₹", ""))
-        except: return
+        except (ValueError, TypeError): return
         
         paid = self.spin_paid.value()
         credit = total - paid

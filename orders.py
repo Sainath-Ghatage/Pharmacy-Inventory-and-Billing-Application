@@ -52,7 +52,28 @@ COLOR_BORDER = "#dee2e6"
 
 STYLE_SHEET = f"""
     QWidget {{ font-family: 'Segoe UI', Arial, sans-serif; color: #000000; background-color: {COLOR_BG}; }}
-    QLabel, QCheckBox, QRadioButton, QTabWidget {{ color: #000000; background: transparent; }}
+    QLabel, QRadioButton, QTabWidget {{ color: #000000; background: transparent; }}
+    /* --- CUSTOM CHECKBOX STYLING --- */
+    QCheckBox {{
+        color: #000000;
+        background: transparent;
+    }}
+    QCheckBox::indicator {{
+        width: 20px;
+        height: 20px;
+        border: 2px solid #888;
+        border-radius: 4px;
+        background-color: white;
+    }}
+    QCheckBox::indicator:hover {{
+        border: 2px solid {COLOR_NAVBAR};
+        background-color: #f1f3f4;
+    }}
+    QCheckBox::indicator:checked {{
+        background-color: {COLOR_ACCENT};
+        border: 2px solid {COLOR_ACCENT};
+        image: url(check.svg); 
+    }}
     QLineEdit, QComboBox, QSpinBox {{
         border: 1px solid #ced4da; border-radius: 4px; padding: 5px; 
         font-size: 14px; background-color: #ffffff; color: #000000; 
@@ -225,7 +246,7 @@ class OrdersInterface(QWidget):
                     else:
                           exp_date = datetime.datetime.strptime(exp_date_str, "%Y-%m-%d").date()
                     if (exp_date - today).days < 120: is_expiring = True
-            except: pass
+            except (ValueError, TypeError): pass
 
             if is_low_stock or is_expiring:
                 self.alert_table.insertRow(row_idx)
@@ -429,8 +450,9 @@ class OrdersInterface(QWidget):
             sb.valueChanged.connect(lambda val, n=name: self.update_cart_qty(n, val))
             self.cart_table.setCellWidget(i, 1, sb)
             
-            btn_del = QPushButton("Remove")
-            btn_del.setStyleSheet(f"color: white; background-color: {COLOR_DANGER}; border-radius: 3px;")
+            btn_del = QPushButton("X")
+            btn_del.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn_del.setStyleSheet(f"QPushButton {{ color: white; background-color: {COLOR_DANGER}; border: none; border-radius: 4px; padding: 5px; font-weight: bold; }} QPushButton:hover {{ background-color: #c82333; }}")
             btn_del.clicked.connect(lambda _, n=name: self.remove_from_cart(n))
             self.cart_table.setCellWidget(i, 2, btn_del)
 

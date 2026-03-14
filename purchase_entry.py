@@ -148,7 +148,8 @@ class PurchaseEntryInterface(QWidget):
         try:
             cur.execute("SELECT prod_name FROM Product_Details")
             self.prod_names = [row[0] for row in cur.fetchall()]
-        except: pass
+        except sqlite3.Error as e:
+            print(f"Error loading product names: {e}")
         finally: conn.close()
 
     def init_ui(self):
@@ -222,11 +223,13 @@ class PurchaseEntryInterface(QWidget):
         
         btn_import_file = QPushButton("Import CSV/Excel")
         btn_import_file.clicked.connect(self.import_from_file)
-        btn_import_file.setStyleSheet("background-color: #ffc107; color: #000; border: none;")
+        btn_import_file.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_import_file.setStyleSheet("QPushButton { background-color: #ffc107; color: #000; border: none; padding: 8px 15px; border-radius: 4px; font-weight: bold; } QPushButton:hover { background-color: #e0a800; }")
         
         btn_load_po = QPushButton("Load from Order")
         btn_load_po.clicked.connect(self.load_from_order)
-        btn_load_po.setStyleSheet(f"background-color: {COLOR_NAVBAR}; color: white; border: none;")
+        btn_load_po.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_load_po.setStyleSheet(f"QPushButton {{ background-color: {COLOR_NAVBAR}; color: white; border: none; padding: 8px 15px; border-radius: 4px; font-weight: bold; }} QPushButton:hover {{ background-color: #0b3c8a; }}")
         
         tool_bar.addWidget(btn_import_file)
         tool_bar.addWidget(btn_load_po)
@@ -251,7 +254,7 @@ class PurchaseEntryInterface(QWidget):
         self.table.setColumnWidth(5, 100) 
         self.table.setColumnWidth(6, 100) 
         self.table.setColumnWidth(7, 100) 
-        self.table.setColumnWidth(8, 60)  
+        self.table.setColumnWidth(8, 80)  
 
         self.table.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.table.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
@@ -301,10 +304,11 @@ class PurchaseEntryInterface(QWidget):
         foot_main.addLayout(pay_row)
 
         btn_row = QHBoxLayout()
-        self.btn_clear = QPushButton("Cancel Edit / Clear Form")
+        self.btn_clear = QPushButton("Reset Form")
         self.btn_clear.clicked.connect(self.clear_form)
-        self.btn_clear.setFixedWidth(180)
-        self.btn_clear.setStyleSheet("color: #dc3545; border-color: #dc3545;")
+        self.btn_clear.setFixedSize(140, 45)
+        self.btn_clear.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_clear.setStyleSheet("QPushButton { color: #dc3545; background-color: white; border: 2px solid #dc3545; font-size: 14px; border-radius: 6px; font-weight: bold; } QPushButton:hover { background-color: #dc3545; color: white; }")
         
         self.lbl_grand_total = QLabel("Total: ₹0.00")
         self.lbl_grand_total.setStyleSheet(f"font-size: 22px; font-weight: 800; color: {COLOR_NAVBAR};")
@@ -313,7 +317,7 @@ class PurchaseEntryInterface(QWidget):
         self.btn_save = QPushButton("SAVE INVOICE")
         self.btn_save.setFixedSize(160, 45)
         self.btn_save.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_save.setStyleSheet(f"background-color: {COLOR_GREEN}; color: white; border: none; font-size: 14px; border-radius: 6px; font-weight: bold;")
+        self.btn_save.setStyleSheet(f"QPushButton {{ background-color: {COLOR_GREEN}; color: white; border: none; font-size: 14px; border-radius: 6px; font-weight: bold; }} QPushButton:hover {{ background-color: #146c43; }}")
         self.btn_save.clicked.connect(self.save_invoice)
 
         btn_row.addWidget(self.btn_clear); btn_row.addStretch()
@@ -387,10 +391,12 @@ class PurchaseEntryInterface(QWidget):
             FROM Purchase_Invoice p
             LEFT JOIN Supplier s ON p.supp_id = s.Supp_id
         """
+        params = []
         if query_txt:
-            sql += f" WHERE p.invoice_number LIKE '%{query_txt}%' OR s.Sup_name LIKE '%{query_txt}%'"
+            sql += " WHERE p.invoice_number LIKE ? OR s.Sup_name LIKE ?"
+            params = [f"%{query_txt}%", f"%{query_txt}%"]
         sql += " ORDER BY p.invoice_id DESC"
-        cur.execute(sql)
+        cur.execute(sql, params)
         rows = cur.fetchall()
         conn.close()
         
@@ -536,10 +542,10 @@ class PurchaseEntryInterface(QWidget):
         name_edit.editingFinished.connect(lambda: self.on_name_entered(rc, name_edit))
         self.table.setCellWidget(rc, 0, name_edit)
         
-        btn_del = QPushButton("✕")
+        btn_del = QPushButton("X")
         btn_del.setFixedSize(25, 25)
         btn_del.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_del.setStyleSheet(f"color: white; background-color: {COLOR_DELETE}; border: none; border-radius: 4px; font-weight: bold;")
+        btn_del.setStyleSheet(f"QPushButton {{ color: white; background-color: {COLOR_DELETE}; border: none; border-radius: 4px; font-weight: bold; }} QPushButton:hover {{ background-color: #c82333; }}")
         btn_del.clicked.connect(lambda: self.remove_specific_row(btn_del))
         
         w = QWidget()
@@ -675,7 +681,8 @@ class PurchaseEntryInterface(QWidget):
             self.cmb_supplier.addItem("-- Select Supplier --", None)
             for name, sid in self.suppliers:
                 self.cmb_supplier.addItem(name, sid)
-        except: pass
+        except sqlite3.Error as e:
+            print(f"Error loading suppliers: {e}")
         finally: conn.close()
 
     def on_cell_changed(self, row, col):
@@ -694,7 +701,7 @@ class PurchaseEntryInterface(QWidget):
                 self.table.blockSignals(False)
                 
                 self.update_grand_total()
-            except: pass
+            except (ValueError, TypeError): pass
 
     def update_grand_total(self):
         g_total = 0
@@ -702,7 +709,7 @@ class PurchaseEntryInterface(QWidget):
             item = self.table.item(r, 7)
             if item:
                 try: g_total += float(item.text())
-                except: pass
+                except (ValueError, TypeError): pass
         
         self.lbl_grand_total.setText(f"Total: ₹{g_total:.2f}")
         self.calculate_balance()
@@ -714,7 +721,7 @@ class PurchaseEntryInterface(QWidget):
             paid = self.inp_paid.value()
             balance = total - paid
             self.inp_balance.setText(f"₹ {balance:.2f}")
-        except:
+        except (ValueError, TypeError):
             self.inp_balance.setText("₹ 0.00")
 
     def clear_form(self):
@@ -746,7 +753,7 @@ class PurchaseEntryInterface(QWidget):
         paid_amt = self.inp_paid.value()
         
         try: total_val = float(self.lbl_grand_total.text().replace("Total: ₹", ""))
-        except: total_val = 0
+        except (ValueError, TypeError): total_val = 0
         
         balance_amt = total_val - paid_amt
         rows_to_save = []

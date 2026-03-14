@@ -344,7 +344,7 @@ class ReportsInterface(QWidget):
             
             # === STOCK REPORTS ===
             elif report_name == "Current Stock Report":
-                q = "SELECT d.prod_name, d.type, d.rack_no, CASE WHEN d.tabs_per_strip > 1 THEN (CAST(IFNULL(SUM(s.quantity),0) AS INTEGER) / d.tabs_per_strip) || 's + ' || (CAST(IFNULL(SUM(s.quantity),0) AS INTEGER) % d.tabs_per_strip) || 't' ELSE IFNULL(SUM(s.quantity), 0) || ' Units' END FROM Product_Details d LEFT JOIN Product_Stock s ON d.prod_id = s.prod_id GROUP BY d.prod_id ORDER BY d.prod_name"
+                q = "SELECT d.prod_name, d.type, d.rack_no, CASE WHEN d.tabs_per_strip > 1 THEN (CAST(IFNULL(SUM(s.quantity),0) AS INTEGER) / d.tabs_per_strip) || 's + ' || (CAST(IFNULL(SUM(s.quantity),0) AS INTEGER) % d.tabs_per_strip) || 't' ELSE IFNULL(SUM(s.quantity), 0) || ' Units' END FROM Product_Details d LEFT JOIN Product_Stock s ON d.prod_id = s.prod_id GROUP BY d.prod_id HAVING SUM(s.quantity) > 0 ORDER BY d.prod_name"
                 self.run_table_query(cursor, q, None, ["Product", "Type", "Rack", "Total Qty"])
             elif report_name == "Batch Wise Stock":
                 self.run_table_query(cursor, "SELECT d.prod_name, s.batch_no, s.exp_date, s.quantity, s.purchase_rate, s.sale_rate FROM Product_Stock s JOIN Product_Details d ON s.prod_id = d.prod_id ORDER BY s.exp_date ASC", None, ["Product", "Batch", "Expiry", "Total Units", "Buy Rate", "Sell Rate"])
@@ -356,10 +356,10 @@ class ReportsInterface(QWidget):
             elif report_name == "Slow Moving Products":
                 q = "SELECT m.prod_name, m.type, IFNULL(SUM(bi.quantity), 0) as sold_qty FROM Product_Details m LEFT JOIN Bill_Item bi ON m.prod_id = bi.Prod_id LEFT JOIN Bill b ON bi.Bill_id = b.Bill_id AND date(b.bill_date) BETWEEN ? AND ? GROUP BY m.prod_id HAVING sold_qty <= 10 ORDER BY sold_qty ASC"
                 self.run_table_query(cursor, q, (d_from, d_to), ["Product", "Type", "Units Sold (Within Range)"])
-            elif report_name == "Excess Stock (>100)":
+            elif report_name == "Excess Stock":
                 q = "SELECT d.prod_name, CASE WHEN d.tabs_per_strip > 1 THEN (CAST(SUM(s.quantity) AS INTEGER) / d.tabs_per_strip) || 's + ' || (CAST(SUM(s.quantity) AS INTEGER) % d.tabs_per_strip) || 't' ELSE SUM(s.quantity) || ' Units' END FROM Product_Stock s JOIN Product_Details d ON s.prod_id = d.prod_id GROUP BY d.prod_id HAVING SUM(s.quantity) > 100 ORDER BY SUM(s.quantity) DESC"
                 self.run_table_query(cursor, q, None, ["Product", "Stock Qty (Strips + Loose)"], show_total=False)
-            elif report_name == "Fast Moving (Non-Stop)":
+            elif report_name == "Fast Moving ":
                 self.run_table_query(cursor, "SELECT m.prod_name, COUNT(bi.item_id) as freq FROM Bill_Item bi JOIN Product_Details m ON bi.Prod_id = m.prod_id GROUP BY m.prod_id ORDER BY freq DESC LIMIT 50", None, ["Product", "Sales Frequency"])
             elif report_name == "Purchase Returns Details":
                 q = "SELECT date(pr.return_date), pr.return_number, s.Sup_name, m.prod_name, pri.return_qty, pri.return_amount FROM Purchase_Return_Item pri JOIN Purchase_Return pr ON pri.return_id = pr.return_id JOIN Supplier s ON pr.supp_id = s.Supp_id JOIN Product_Details m ON pri.Prod_id = m.prod_id WHERE date(pr.return_date) BETWEEN ? AND ? ORDER BY pr.return_date DESC"
@@ -420,7 +420,7 @@ class ReportsInterface(QWidget):
                     m, y = map(int, exp.split('/'))
                     exp_dt = datetime.date(2000+y, m, 1)
                     if exp_dt < today: expired_loss += float(qty * rate)
-            except: pass
+            except (ValueError, TypeError): pass
 
         cursor.execute("SELECT expense_type, SUM(amount) FROM Expenses WHERE date(expense_date) BETWEEN ? AND ? GROUP BY expense_type", (d_from, d_to))
         expenses_data = cursor.fetchall()
@@ -582,7 +582,7 @@ class ReportsInterface(QWidget):
                     try:
                         col_sums[j] += float(c_val)
                         is_num[j] = True
-                    except: pass
+                    except (ValueError, TypeError): pass
                 else:
                     item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
                 self.table.setItem(i, j, item)

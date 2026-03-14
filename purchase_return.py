@@ -78,19 +78,20 @@ STYLE_SHEET = f"""
         background: transparent;
     }}
     QCheckBox::indicator {{
-        width: 18px;
-        height: 18px;
+        width: 20px;
+        height: 20px;
         border: 2px solid #888;
         border-radius: 4px;
         background-color: white;
     }}
     QCheckBox::indicator:hover {{
         border: 2px solid {COLOR_NAVBAR};
+        background-color: #f1f3f4;
     }}
     QCheckBox::indicator:checked {{
         background-color: {COLOR_GREEN_BTN};
         border: 2px solid {COLOR_GREEN_BTN};
-        image: url(check.png); 
+        image: url(check.svg); 
     }}
 """
 
@@ -401,7 +402,7 @@ class PurchaseReturnInterface(QWidget):
                     exp_date = datetime.date(y, m, 1)
                 else:
                     exp_date = datetime.datetime.strptime(exp_date_str, "%Y-%m-%d").date()
-            except:
+            except (ValueError, TypeError):
                 continue
 
             days_left = (exp_date - today).days
@@ -584,8 +585,8 @@ class PurchaseReturnInterface(QWidget):
         self.table.setCellWidget(row, 5, spin_amt)
 
         # COLUMN 6: DELETE BUTTON
-        btn_del = QPushButton("✖")
-        btn_del.setStyleSheet("color: white; background-color: #dc3545; font-weight: bold; border-radius: 4px; margin: 5px;")
+        btn_del = QPushButton("X")
+        btn_del.setStyleSheet("QPushButton { color: white; background-color: #dc3545; font-weight: bold; border-radius: 4px; margin: 5px; } QPushButton:hover { background-color: #c82333; }")
         btn_del.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_del.clicked.connect(lambda _, r=row: self.remove_row(r))
         self.table.setCellWidget(row, 6, btn_del)
@@ -597,17 +598,17 @@ class PurchaseReturnInterface(QWidget):
         for i in range(self.table.rowCount()):
             btn = self.table.cellWidget(i, 6)
             try: btn.clicked.disconnect() 
-            except: pass
+            except (TypeError, RuntimeError): pass
             btn.clicked.connect(lambda _, r=i: self.remove_row(r))
             
             cmb_prod = self.table.cellWidget(i, 0)
             try: cmb_prod.currentIndexChanged.disconnect()
-            except: pass
+            except (TypeError, RuntimeError): pass
             cmb_prod.currentIndexChanged.connect(lambda _, r=i: self.on_prod_selected(r))
             
             cmb_batch = self.table.cellWidget(i, 1)
             try: cmb_batch.currentIndexChanged.disconnect()
-            except: pass
+            except (TypeError, RuntimeError): pass
             cmb_batch.currentIndexChanged.connect(lambda _, r=i: self.on_batch_selected(r))
 
     def on_prod_selected(self, row):
@@ -670,7 +671,7 @@ class PurchaseReturnInterface(QWidget):
             try: 
                 spin_strips.valueChanged.disconnect() 
                 spin_tabs.valueChanged.disconnect() 
-            except: pass
+            except (TypeError, RuntimeError): pass
             
             # 2. Auto-calculate amount and DYNAMICALLY LIMIT Loose Tabs
             def auto_calc_amount():
@@ -720,7 +721,7 @@ class PurchaseReturnInterface(QWidget):
             received = self.inp_received.value()
             balance = total - received
             self.inp_balance.setText(f"₹ {balance:.2f}")
-        except:
+        except (ValueError, TypeError):
             self.inp_balance.setText("₹ 0.00")
 
     def clear_form(self):

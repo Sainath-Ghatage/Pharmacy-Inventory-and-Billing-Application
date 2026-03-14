@@ -150,7 +150,7 @@ class GenericPartnerTab(QWidget):
                 if col_name == "balance" and val is not None:
                     try:
                         val = f"{float(val):.2f}"
-                    except:
+                    except (ValueError, TypeError):
                         pass
                 
                 item = QTableWidgetItem(str(val) if val is not None else "")
@@ -169,7 +169,7 @@ class GenericPartnerTab(QWidget):
 
             btn_del = QPushButton("Delete")
             btn_del.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn_del.setStyleSheet(f"background-color: {COLOR_DELETE}; color: white; border: none; padding: 5px 10px; border-radius: 3px; font-weight: bold;")
+            btn_del.setStyleSheet(f"QPushButton {{ background-color: {COLOR_DELETE}; color: white; border: none; padding: 5px 10px; border-radius: 4px; font-weight: bold; }} QPushButton:hover {{ background-color: #c82333; }}")
             btn_del.clicked.connect(lambda _, pid=pk_id: self.confirm_delete_id(pid))
 
             layout.addWidget(btn_edit)
@@ -228,7 +228,7 @@ class GenericPartnerTab(QWidget):
             bal_idx = self.sql_columns.index('balance')
             balance_val = self.table.item(row, bal_idx + 1).text()
             try: current_balance = float(balance_val)
-            except: current_balance = 0.0
+            except (ValueError, TypeError): current_balance = 0.0
 
             bal_box = QGroupBox("Account Balance")
             bal_layout = QVBoxLayout()

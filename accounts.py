@@ -326,7 +326,7 @@ class AccountsInterface(QWidget):
             
             # Delete Button
             btn_del = QPushButton("Delete")
-            btn_del.setStyleSheet(f"color: {COLOR_DELETE}; background: transparent; font-weight: bold; border: none;")
+            btn_del.setStyleSheet(f"QPushButton {{ background-color: {COLOR_DELETE}; color: white; font-weight: bold; border: none; border-radius: 4px; padding: 5px; }} QPushButton:hover {{ background-color: #c82333; }}")
             btn_del.setCursor(Qt.CursorShape.PointingHandCursor)
             btn_del.clicked.connect(lambda _, x=eid: self.delete_expense(x))
             self.table.setCellWidget(i, 5, btn_del)

@@ -383,8 +383,9 @@ class ProductMasterView(QWidget):
                     btn_edit.setStyleSheet(f"background-color: {COLOR_EDIT}; color: black; border: none; border-radius: 3px; padding: 6px 12px; font-weight: bold;")
                     btn_edit.clicked.connect(lambda _, d=full_data: self.request_edit.emit(d))
                     
-                    btn_del = QPushButton("Del")
-                    btn_del.setStyleSheet(f"background-color: {COLOR_DELETE}; color: white; border: none; border-radius: 3px; padding: 6px 12px; font-weight: bold;")
+                    btn_del = QPushButton("Delete")
+                    btn_del.setCursor(Qt.CursorShape.PointingHandCursor)
+                    btn_del.setStyleSheet(f"QPushButton {{ background-color: {COLOR_DELETE}; color: white; border: none; border-radius: 4px; padding: 6px 12px; font-weight: bold; }} QPushButton:hover {{ background-color: #c82333; }}")
                     btn_del.clicked.connect(lambda _, pid=prod_id: self.delete_product(pid))
                     
                     hbox.addWidget(btn_edit)
@@ -822,7 +823,7 @@ class StockInterface(QWidget):
                         return date(2000+y, m, 1)
                     else:
                         return datetime.strptime(exp_str, "%Y-%m-%d").date()
-                except:
+                except (ValueError, TypeError):
                     return date.max if "Earliest" in sort_choice else date.min
 
             rows.sort(key=extract_date, reverse=("Latest" in sort_choice))
@@ -860,7 +861,7 @@ class StockInterface(QWidget):
                 elif exp:
                     exp_dt = datetime.strptime(exp, "%Y-%m-%d").date()
                     days_left = (exp_dt - today).days
-            except: pass
+            except (ValueError, TypeError): pass
 
             row_data = {
                 'stock_id': stock_id, 'name': name, 'batch': batch, 'qty': qty, 
@@ -903,8 +904,9 @@ class StockInterface(QWidget):
                 btn_edit.setStyleSheet(f"background-color: {COLOR_EDIT}; color: black; border: none; border-radius: 3px; padding: 5px; font-weight: bold;")
                 btn_edit.clicked.connect(lambda _, d=full_data: self.edit_stock_entry(d))
                 
-                btn_del = QPushButton("Del")
-                btn_del.setStyleSheet(f"background-color: {COLOR_DELETE}; color: white; border: none; border-radius: 3px; padding: 5px; font-weight: bold;")
+                btn_del = QPushButton("Delete")
+                btn_del.setCursor(Qt.CursorShape.PointingHandCursor)
+                btn_del.setStyleSheet(f"QPushButton {{ background-color: {COLOR_DELETE}; color: white; border: none; border-radius: 4px; padding: 5px; font-weight: bold; }} QPushButton:hover {{ background-color: #c82333; }}")
                 btn_del.clicked.connect(lambda _, sid=full_data['stock_id']: self.delete_batch(sid))
                 
                 hbox.addWidget(btn_edit)

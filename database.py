@@ -15,6 +15,17 @@ def get_db_path():
 def get_connection():
     return sqlite3.connect(get_db_path())
 
+from contextlib import contextmanager
+
+@contextmanager
+def get_connection_ctx():
+    """Context manager for database connections. Usage: with database.get_connection_ctx() as conn:"""
+    conn = get_connection()
+    try:
+        yield conn
+    finally:
+        conn.close()
+
 # ... keep your init_db() and table creations the same ...
 
 def init_db():
