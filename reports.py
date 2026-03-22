@@ -220,7 +220,7 @@ class ReportsInterface(QWidget):
         self.tree = QTreeWidget()
         self.tree.setHeaderHidden(True)
         
-        self.add_tree_item("Sales Reports", ["Daily Sales Journal", "Customer/Patient Sales", "Doctor Wise Sales", "Product Wise Sales"])
+        self.add_tree_item("Sales Reports", ["Sales Journal", "Customer/Patient Sales", "Doctor Wise Sales", "Product Wise Sales"])
         self.add_tree_item("Stock Reports", ["Current Stock Report", "Batch Wise Stock", "Rack Wise Stock", "Supplier Stock Report", "Slow Moving Products", "Excess Stock", "Fast Moving "])
         self.add_tree_item("Procurement & Returns", ["Purchase Returns Details"])
         self.add_tree_item("Financial Reports", ["Financial Dashboard (P&L)"])
@@ -299,7 +299,7 @@ class ReportsInterface(QWidget):
         self.lbl_report_title.setText(report_name)
         
         is_date_relevant = report_name in [
-            "Daily Sales Journal", "Customer/Patient Sales", "Doctor Wise Sales", "Product Wise Sales", 
+            "Sales Journal", "Customer/Patient Sales", "Doctor Wise Sales", "Product Wise Sales", 
             "Slow Moving Products", "Purchase Returns Details", "Daily Sales Graph", "Monthly Sales Graph", "Financial Dashboard (P&L)"
         ]
         
@@ -333,7 +333,7 @@ class ReportsInterface(QWidget):
                 self.populate_financial_dashboard(cursor, d_from, d_to)
                 
             # === STANDARD TABLE REPORTS ===
-            elif report_name == "Daily Sales Journal":
+            elif report_name == "Sales Journal":
                 self.run_table_query(cursor, "SELECT bill_date, Bill_id, patient_name, doctor_name, payment_method, total_sum FROM Bill WHERE date(bill_date) BETWEEN ? AND ? ORDER BY bill_date DESC", (d_from, d_to), ["Date", "Bill #", "Patient", "Doctor", "Pay Mode", "Amount"])
             elif report_name == "Customer/Patient Sales":
                 self.run_table_query(cursor, "SELECT patient_name, COUNT(Bill_id), SUM(total_sum) FROM Bill WHERE date(bill_date) BETWEEN ? AND ? GROUP BY patient_name ORDER BY SUM(total_sum) DESC", (d_from, d_to), ["Patient Name", "Total Bills", "Total Spent"])
