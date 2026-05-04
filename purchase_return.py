@@ -1006,8 +1006,8 @@ class PurchaseReturnInterface(QWidget):
                     break
             
             tps = int(tps) if tps else 1
-            qty_strips = qty_units // tps
-            qty_tabs = qty_units % tps
+            qty_strips = int(qty_units // tps)
+            qty_tabs = int(qty_units % tps)
             
             spin_strips = self.table.cellWidget(row, 3)
             spin_strips.setValue(qty_strips)
